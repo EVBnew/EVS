@@ -1,4 +1,4 @@
-# everskills/pages/coach_space.py
+# pages/10_coach_space.py
 from __future__ import annotations
 
 import hashlib
@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import streamlit as st
 
+from everskills.services.access import require_login, find_user
 from everskills.services.storage import (
     load_requests,
     load_campaigns,
@@ -18,13 +19,24 @@ from everskills.services.storage import (
 st.set_page_config(page_title="Coach Space — EVERSKILLS", layout="wide")
 
 # ----------------------------
+# Auth
+# ----------------------------
+user = st.session_state.get("user")
+ok, msg = require_login(user)
+if not ok:
+    st.error(msg)
+    st.info("Retourne sur Welcome (app) pour te connecter.")
+    st.stop()
+
+if user.get("role") not in ("coach", "admin", "super_admin"):
+    st.warning("Accès réservé aux coachs / admins.")
+    st.stop()
+
+coach_email = (user.get("email") or "").strip().lower()
+
+# ----------------------------
 # Helpers
 # ----------------------------
-def _as_list(x: Any) -> List[Any]:
-    if x is None:
-        return []
-    return x if isinstance(x, list) else [x]
-
 def _sort_key_req(req: Dict[str, Any]) -> str:
     return str(req.get("ts") or req.get("created_at") or "")
 
@@ -47,7 +59,12 @@ def _label_camp(c: Dict[str, Any]) -> str:
     obj = c.get("objective", "")
     return f"{email} — {status} — {cid} — {obj[:60]}"
 
-def _append_event(camp: Dict[str, Any], event_type: str, actor: str = "coach", payload: Optional[Dict[str, Any]] = None) -> None:
+def _append_event(
+    camp: Dict[str, Any],
+    event_type: str,
+    actor: str = "coach",
+    payload: Optional[Dict[str, Any]] = None,
+) -> None:
     events = camp.get("events")
     if not isinstance(events, list):
         events = []
@@ -164,10 +181,12 @@ def _ensure_weekly_plan(camp: Dict[str, Any]) -> Dict[str, Any]:
 
     camp["weekly_plan"] = norm
     camp["kickoff_message"] = str(camp.get("kickoff_message") or "").strip()
+    # IMPORTANT: one single name for closure message
+    camp["closure_message"] = str(camp.get("closure_message") or "").strip()
     return camp
 
 # ----------------------------
-# NEW: program_text -> weekly_plan sync (same as learner, robust)
+# program_text -> weekly_plan sync
 # ----------------------------
 def _hash_text(s: str) -> str:
     return hashlib.md5((s or "").encode("utf-8")).hexdigest()
@@ -315,7 +334,7 @@ def _sync_weekly_plan_from_program(camp: Dict[str, Any]) -> Tuple[Dict[str, Any]
     return camp, changed
 
 # ----------------------------
-# OpenAI helpers
+# OpenAI
 # ----------------------------
 def _get_openai_client():
     try:
@@ -353,29 +372,53 @@ Contraintes :
 Réponds en texte clair (pas de JSON).
 """.strip()
 
+def _first_name_from_access(email: str) -> str:
+    u = find_user(email or "")
+    if not u:
+        return ""
+    return str(u.get("first_name") or "").strip()
+
+def _kickoff_template(learner_first: str, weeks: int, coach_first: str) -> str:
+    lf = learner_first or ""
+    cf = coach_first or "Ton coach"
+    hello = f"Bonjour {lf}," if lf else "Bonjour,"
+    return (
+        f"{hello}\n\n"
+        "Merci pour ta demande qui est très claire. Bravo, c'est déjà un premier pas essentiel : "
+        "exprimer son projet avec clarté.\n"
+        f"J'ai pu préparer un programme de travail sur la durée souhaitée ({weeks} semaines).\n\n"
+        "Je te propose de nous en parler lors du rendez-vous de démarrage.\n\n"
+        "Voici quelques options de dates:\n"
+        "- [Option 1]\n"
+        "- [Option 2]\n"
+        "- [Option 3]\n\n"
+        "J'espère que l'une d'entre elles te conviendra.\n\n"
+        "D'ici là je reste disponible pour toute question.\n\n"
+        f"A bientôt.\n\n{cf}"
+    )
+
+def _closure_template(learner_first: str, objective: str, weeks: int, coach_first: str) -> str:
+    lf = learner_first or ""
+    cf = coach_first or "Ton coach"
+    dear = f"Cher {lf}," if lf else "Bonjour,"
+    return (
+        f"{dear}\n\n"
+        f"Ça a été un réel plaisir de t'accompagner dans ton objectif : {objective}.\n"
+        f"Au cours de ces {weeks} semaines, tu as réalisé avec brio les activités proposées, "
+        "en prenant en compte les retours que nous avons évoqués ensemble lors des points hebdomadaires.\n\n"
+        "Et maintenant ?\n"
+        "Une autre phase peut commencer : la réflexivité — être son propre coach avec un regard précis et bienveillant.\n\n"
+        "Nous pouvons aussi rester en contact en nous écrivant de temps en temps — ça me ferait très plaisir de suivre ton évolution.\n"
+        "Et si tu souhaites approfondir certains concepts dans ce format, je resterai disponible.\n\n"
+        f"{lf + ',' if lf else ''} à nouveau, ça a été un vrai plaisir de faire ce chemin ensemble.\n\n"
+        f"Au plaisir de nous revoir et d'échanger.\n\n{cf}"
+    )
+
 # ----------------------------
 # UI
 # ----------------------------
 st.title("🧠 Coach Space")
-st.caption("Demandes → campagnes → programme → suivi. Tout ici.")
-
-with st.sidebar:
-    st.subheader("Accès (Coach)")
-    coach_email = st.text_input("Ton email (coach)", value=st.session_state.get("coach_email", ""))
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("✅ Enregistrer", use_container_width=True):
-            st.session_state["coach_email"] = (coach_email or "").strip().lower()
-            st.rerun()
-    with c2:
-        if st.button("🔄 Recharger", use_container_width=True):
-            st.session_state["__reload__"] = now_iso()
-            st.rerun()
-
-coach_email = (st.session_state.get("coach_email") or "").strip().lower()
-if not coach_email:
-    st.info("Renseigne ton email coach dans la sidebar.")
-    st.stop()
+st.caption("Demandes → campagnes → programme → suivi → clôture.")
 
 requests_raw: List[Dict[str, Any]] = load_requests() or []
 campaigns_raw: List[Dict[str, Any]] = load_campaigns() or []
@@ -403,6 +446,7 @@ st.session_state.setdefault("coach_view", "Demandes")
 st.session_state.setdefault("selected_req_id", "")
 st.session_state.setdefault("selected_camp_id", "")
 st.session_state.setdefault("program_draft", "")
+st.session_state.setdefault("_draft_cid", "")
 
 with col_left:
     st.subheader("📌 Sélection")
@@ -468,12 +512,14 @@ with col_mid:
             st.write(f"**Statut request :** `{_req_status(selected_req)}`")
 
     if not selected_camp:
-        st.info("Aucune campagne liée à cette demande. ➜ Crée-la dans la colonne de droite.")
+        st.info("Aucune campagne liée. ➜ Crée-la dans la colonne de droite.")
     else:
-        st.divider()
-
         existing_text = (selected_camp.get("program_text") or "").strip()
-        if not st.session_state.get("program_draft"):
+        cid = str(selected_camp.get("id") or "").strip()
+
+        # Reset draft when campaign changes
+        if st.session_state.get("_draft_cid") != cid:
+            st.session_state["_draft_cid"] = cid
             st.session_state["program_draft"] = existing_text
 
         b1, b2, b3 = st.columns([1, 1, 1.4])
@@ -486,12 +532,16 @@ with col_mid:
 
         if do_load:
             st.session_state["program_draft"] = (selected_camp.get("program_text") or "").strip()
+            selected_camp, _ = _sync_weekly_plan_from_program(selected_camp)
+            _save_campaign_in_list(campaigns, selected_camp)
+            st.success("Rechargé ✅")
+            st.rerun()
 
         if do_gen or do_regen:
             client = _get_openai_client()
             model = (st.secrets.get("OPENAI_MODEL") or "gpt-4o-mini").strip()
             if not client:
-                st.error("OPENAI_API_KEY manquante (ou SDK openai absent). Ajoute la clé dans .streamlit/secrets.toml.")
+                st.error("OPENAI_API_KEY manquante (ou SDK openai absent).")
             else:
                 objective = str(selected_camp.get("objective") or "").strip()
                 context = str(selected_camp.get("context") or "").strip()
@@ -526,10 +576,18 @@ with col_mid:
         with c1:
             if st.button("💾 Enregistrer le programme", use_container_width=True):
                 selected_camp["program_text"] = program_text
+
+                # Sync weekly_plan on save
+                selected_camp, changed = _sync_weekly_plan_from_program(selected_camp)
+
                 selected_camp["updated_at"] = now_iso()
-                _append_event(selected_camp, "program_saved", actor="coach")
+                _append_event(selected_camp, "program_saved", actor="coach", payload={"weekly_synced": bool(changed)})
                 _save_campaign_in_list(campaigns, selected_camp)
-                st.success("OK ✅")
+
+                # keep draft aligned
+                st.session_state["program_draft"] = program_text
+
+                st.success("OK ✅ (programme enregistré + plan hebdo synchronisé)")
                 st.rerun()
 
         with c2:
@@ -537,15 +595,17 @@ with col_mid:
                 selected_camp["program_text"] = program_text
                 selected_camp["status"] = "program_ready"
 
-                # ensure weekly_plan is initialized from program before learner sees it
                 selected_camp, _ = _sync_weekly_plan_from_program(selected_camp)
 
                 selected_camp["updated_at"] = now_iso()
                 _append_event(selected_camp, "program_published", actor="coach")
                 _save_campaign_in_list(campaigns, selected_camp)
+
                 if selected_req:
                     update_request(str(selected_req.get("id")), {"status": "archived", "updated_at": now_iso()})
-                st.success("Publié ✅ (weekly_plan initialisé)")
+
+                st.session_state["program_draft"] = program_text
+                st.success("Publié ✅")
                 st.rerun()
 
         st.divider()
@@ -554,19 +614,33 @@ with col_mid:
         kickoff = st.text_area(
             " ",
             value=str(selected_camp.get("kickoff_message") or ""),
-            height=90,
+            height=120,
             placeholder="Ex: Bienvenue ! Cette semaine, on démarre simple et concret.",
             label_visibility="collapsed",
             key=f"kickoff_{selected_camp.get('id')}",
         )
 
-        if st.button("💾 Enregistrer le message de démarrage", use_container_width=True):
-            selected_camp["kickoff_message"] = kickoff.strip()
-            selected_camp["updated_at"] = now_iso()
-            _append_event(selected_camp, "kickoff_saved", actor="coach")
-            _save_campaign_in_list(campaigns, selected_camp)
-            st.success("OK ✅")
-            st.rerun()
+        kc1, kc2 = st.columns([1, 1])
+        with kc1:
+            if st.button("💾 Enregistrer le message de démarrage", use_container_width=True):
+                selected_camp["kickoff_message"] = kickoff.strip()
+                selected_camp["updated_at"] = now_iso()
+                _append_event(selected_camp, "kickoff_saved", actor="coach")
+                _save_campaign_in_list(campaigns, selected_camp)
+                st.success("OK ✅")
+                st.rerun()
+        with kc2:
+            if st.button("✨ Auto-générer (template)", use_container_width=True):
+                learner_email = str(selected_camp.get("learner_email") or "").strip().lower()
+                learner_first = _first_name_from_access(learner_email)
+                coach_first = str(user.get("first_name") or "").strip()
+                weeks = int(selected_camp.get("weeks") or 3)
+                selected_camp["kickoff_message"] = _kickoff_template(learner_first, weeks, coach_first).strip()
+                selected_camp["updated_at"] = now_iso()
+                _append_event(selected_camp, "kickoff_autofill", actor="coach")
+                _save_campaign_in_list(campaigns, selected_camp)
+                st.success("Template appliqué ✅")
+                st.rerun()
 
         st.divider()
         st.subheader("📈 Suivi learner (lecture + réponse coach)")
@@ -632,7 +706,11 @@ with col_mid:
                         label_visibility="collapsed",
                     )
 
-                    if st.button("💾 Enregistrer semaine (coach)", key=f"save_coach_{selected_camp.get('id')}_{week_n}", use_container_width=True):
+                    if st.button(
+                        "💾 Enregistrer semaine (coach)",
+                        key=f"save_coach_{selected_camp.get('id')}_{week_n}",
+                        use_container_width=True,
+                    ):
                         now = now_iso()
                         w["coach_comment"] = coach_comment
                         w["updated_at"] = now
@@ -648,10 +726,12 @@ with col_right:
     if selected_req and not selected_camp:
         if st.button("✅ Créer campagne (draft)", use_container_width=True):
             rid = str(selected_req.get("id") or "").strip()
+            learner_email = (selected_req.get("email") or "").strip().lower()
+
             camp = {
                 "id": f"camp_{rid}",
                 "request_id": rid,
-                "learner_email": (selected_req.get("email") or "").strip(),
+                "learner_email": learner_email,
                 "coach_email": coach_email,
                 "objective": (selected_req.get("objective") or "").strip(),
                 "context": (selected_req.get("context") or "").strip(),
@@ -660,6 +740,7 @@ with col_right:
                 "program_text": "",
                 "weekly_plan": [],
                 "kickoff_message": "",
+                "closure_message": "",
                 "created_at": now_iso(),
                 "updated_at": now_iso(),
             }
@@ -685,21 +766,70 @@ with col_right:
                 _append_event(selected_camp, "status_draft", actor="coach")
                 _save_campaign_in_list(campaigns, selected_camp)
                 st.rerun()
+
         with c2:
             if st.button("✅ Clôturer (closed)", use_container_width=True):
+                learner_email = str(selected_camp.get("learner_email") or "").strip().lower()
+                learner_first = _first_name_from_access(learner_email)
+                coach_first = str(user.get("first_name") or "").strip()
+                weeks = int(selected_camp.get("weeks") or 3)
+                objective = str(selected_camp.get("objective") or "").strip()
+
+                if not str(selected_camp.get("closure_message") or "").strip():
+                    selected_camp["closure_message"] = _closure_template(
+                        learner_first, objective, weeks, coach_first
+                    ).strip()
+
                 selected_camp["status"] = "closed"
                 selected_camp["closed_at"] = now_iso()
                 selected_camp["updated_at"] = now_iso()
                 _append_event(selected_camp, "campaign_closed", actor="coach")
                 _save_campaign_in_list(campaigns, selected_camp)
-                st.success("Clôturé ✅")
+                st.success("Clôturé ✅ (message de clôture prêt)")
+                st.rerun()
+
+        st.divider()
+        st.markdown("### 🏁 Message de clôture (visible learner)")
+
+        closing = st.text_area(
+            " ",
+            value=str(selected_camp.get("closure_message") or ""),
+            height=120,
+            placeholder="Ex: Bravo pour le chemin parcouru... (message final)",
+            label_visibility="collapsed",
+            key=f"closure_{selected_camp.get('id')}",
+        )
+
+        cc1, cc2 = st.columns([1, 1])
+        with cc1:
+            if st.button("💾 Enregistrer le message de clôture", use_container_width=True):
+                selected_camp["closure_message"] = closing.strip()
+                selected_camp["updated_at"] = now_iso()
+                _append_event(selected_camp, "closure_saved", actor="coach")
+                _save_campaign_in_list(campaigns, selected_camp)
+                st.success("OK ✅")
+                st.rerun()
+        with cc2:
+            if st.button("✨ Auto-générer (template clôture)", use_container_width=True):
+                learner_email = str(selected_camp.get("learner_email") or "").strip().lower()
+                learner_first = _first_name_from_access(learner_email)
+                coach_first = str(user.get("first_name") or "").strip()
+                weeks = int(selected_camp.get("weeks") or 3)
+                objective = str(selected_camp.get("objective") or "").strip()
+                selected_camp["closure_message"] = _closure_template(
+                    learner_first, objective, weeks, coach_first
+                ).strip()
+                selected_camp["updated_at"] = now_iso()
+                _append_event(selected_camp, "closure_autofill", actor="coach")
+                _save_campaign_in_list(campaigns, selected_camp)
+                st.success("Template appliqué ✅")
                 st.rerun()
 
         st.divider()
         st.markdown("**Événements**")
         ev = selected_camp.get("events")
         if isinstance(ev, list) and ev:
-            for e in list(reversed(ev))[:8]:
+            for e in list(reversed(ev))[:10]:
                 st.write(f"- {e.get('ts','')} — {e.get('type','')}")
         else:
             st.caption("Aucun.")

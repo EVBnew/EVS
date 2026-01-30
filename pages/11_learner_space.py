@@ -16,6 +16,9 @@ from everskills.services.storage import (
 
 st.set_page_config(page_title="Learner Space — EVERSKILLS", layout="wide")
 
+# ----------------------------
+# Auth
+# ----------------------------
 user = st.session_state.get("user")
 ok, msg = require_login(user)
 if not ok:
@@ -108,6 +111,7 @@ def _ensure_weekly_plan(camp: Dict[str, Any]) -> Dict[str, Any]:
 
     camp["weekly_plan"] = norm
     camp["kickoff_message"] = str(camp.get("kickoff_message") or "").strip()
+    camp["closure_message"] = str(camp.get("closure_message") or "").strip()
     return camp
 
 def _compute_week_completion(week: Dict[str, Any]) -> float:
@@ -157,7 +161,11 @@ with t1:
 
     with st.form("learner_request_form", clear_on_submit=False):
         objective = st.text_input("Objectif", placeholder="Ex: gagner en assertivité en réunion")
-        context = st.text_area("Contexte", height=120, placeholder="Décris la situation, ce que tu veux changer, la contrainte, etc.")
+        context = st.text_area(
+            "Contexte",
+            height=120,
+            placeholder="Décris la situation, ce que tu veux changer, la contrainte, etc.",
+        )
         weeks = st.number_input("Durée (semaines)", min_value=1, max_value=12, value=3, step=1)
         submitted = st.form_submit_button("📨 Envoyer la demande")
 
@@ -176,7 +184,7 @@ with t1:
                 "objective": objective.strip(),
                 "context": context.strip(),
                 "weeks": int(weeks),
-                "supports": [],  # PJ côté demande -> prochaine itération
+                "supports": [],
                 "status": "submitted",
             }
             requests.append(req)
@@ -185,7 +193,11 @@ with t1:
 
     st.divider()
     st.caption("Tes dernières demandes")
-    my_reqs = [r for r in (load_requests() or []) if isinstance(r, dict) and _norm_email(r.get("email", "")) == learner_email]
+    my_reqs = [
+        r
+        for r in (load_requests() or [])
+        if isinstance(r, dict) and _norm_email(r.get("email", "")) == learner_email
+    ]
     my_reqs = sorted(my_reqs, key=lambda r: str(r.get("ts") or ""), reverse=True)
 
     if not my_reqs:
@@ -203,7 +215,8 @@ with t2:
     campaigns = load_campaigns() or []
     campaigns = [c for c in campaigns if isinstance(c, dict)]
     my_campaigns = [
-        c for c in campaigns
+        c
+        for c in campaigns
         if _norm_email(c.get("learner_email", "")) == learner_email
         and (c.get("status") in ("program_ready", "active", "closed", "draft", "coach_validated"))
     ]
@@ -214,8 +227,8 @@ with t2:
 
     labels = [f"{c.get('id','')} — {c.get('status','')} — {c.get('objective','')[:50]}" for c in my_campaigns]
     idx = st.selectbox("Choisir une campagne", options=list(range(len(my_campaigns))), format_func=lambda i: labels[i])
-    camp = my_campaigns[idx]
-    camp = _ensure_weekly_plan(camp)
+
+    camp = _ensure_weekly_plan(my_campaigns[idx])
 
     left, right = st.columns([1.05, 1.95], gap="large")
 
@@ -235,6 +248,16 @@ with t2:
             st.divider()
             st.markdown("### 💬 Message du coach")
             st.success(kickoff)
+
+        # Message de clôture
+        if str(camp.get("status") or "").strip() == "closed":
+            closing = str(camp.get("closure_message") or "").strip()
+            st.divider()
+            st.markdown("### 🏁 Message de clôture")
+            if closing:
+                st.success(closing)
+            else:
+                st.info("Campagne clôturée. (Message de clôture non renseigné.)")
 
         st.divider()
         st.markdown("### Programme (coach)")
@@ -260,73 +283,84 @@ with t2:
         st.markdown("### Suivi hebdo")
 
         wp = camp.get("weekly_plan") or []
-        for w in wp:
-            if not isinstance(w, dict):
-                continue
-            week_n = int(w.get("week") or 0) or 0
-            obj_week = str(w.get("objective_week") or f"Semaine {week_n}").strip()
+        if not isinstance(wp, list) or not wp:
+            st.info("Aucun suivi hebdo disponible.")
+        else:
+            for w in wp:
+                if not isinstance(w, dict):
+                    continue
 
-            pctw = _compute_week_completion(w)
-            with st.expander(f"Semaine {week_n} — {obj_week or 'Objectif non défini'} — {pctw:.0f}%", expanded=(week_n == 1)):
-                st.markdown("**Objectif de la semaine**")
-                if obj_week:
-                    st.write(obj_week)
-                else:
-                    st.warning("Objectif non défini.")
+                week_n = int(w.get("week") or 0) or 0
+                obj_week = str(w.get("objective_week") or f"Semaine {week_n}").strip()
 
-                st.divider()
-                st.markdown("**Actions (coach → toi)**")
+                pctw = _compute_week_completion(w)
+                with st.expander(
+                    f"Semaine {week_n} — {obj_week or 'Objectif non défini'} — {pctw:.0f}%",
+                    expanded=(week_n == 1),
+                ):
+                    st.markdown("**Objectif de la semaine**")
+                    if obj_week:
+                        st.write(obj_week)
+                    else:
+                        st.warning("Objectif non défini.")
 
-                actions = w.get("actions") or []
-                if not isinstance(actions, list) or not actions:
-                    st.caption("Pas d’actions pré-remplies pour l’instant.")
-                else:
-                    for ai, a in enumerate(actions):
-                        if not isinstance(a, dict):
-                            continue
-                        txt = str(a.get("text") or "").strip()
-                        if not txt:
-                            continue
-                        st.write(f"- {txt}")
+                    st.divider()
+                    st.markdown("**Actions (coach → toi)**")
 
-                        current = str(a.get("status") or "not_started").strip()
-                        keys = [k for k, _ in ACTION_STATUSES]
-                        idxs = keys.index(current) if current in keys else 0
-                        new_status = st.radio(
-                            " ",
-                            options=keys,
-                            index=idxs,
-                            format_func=lambda k: ACTION_LABEL.get(k, k),
-                            key=f"learner_action_{camp.get('id')}_{week_n}_{ai}",
-                            horizontal=True,
-                            label_visibility="collapsed",
-                        )
-                        a["status"] = new_status
+                    actions = w.get("actions") or []
+                    if not isinstance(actions, list) or not actions:
+                        st.caption("Pas d’actions pré-remplies pour l’instant.")
+                    else:
+                        for ai, a in enumerate(actions):
+                            if not isinstance(a, dict):
+                                continue
+                            txt = str(a.get("text") or "").strip()
+                            if not txt:
+                                continue
+                            st.write(f"- {txt}")
 
-                st.divider()
-                st.markdown("**Ton commentaire (verbatim)**")
-                comment = st.text_area(
-                    " ",
-                    value=str(w.get("learner_comment") or ""),
-                    key=f"learner_comment_{camp.get('id')}_{week_n}",
-                    height=90,
-                    placeholder="Ex: j’ai fait l’action 1, pas eu le temps pour l’action 2.",
-                    label_visibility="collapsed",
-                )
+                            current = str(a.get("status") or "not_started").strip()
+                            keys = [k for k, _ in ACTION_STATUSES]
+                            idxs = keys.index(current) if current in keys else 0
+                            new_status = st.radio(
+                                " ",
+                                options=keys,
+                                index=idxs,
+                                format_func=lambda k: ACTION_LABEL.get(k, k),
+                                key=f"learner_action_{camp.get('id')}_{week_n}_{ai}",
+                                horizontal=True,
+                                label_visibility="collapsed",
+                            )
+                            a["status"] = new_status
 
-                coach_comment = str(w.get("coach_comment") or "").strip()
-                if coach_comment:
-                    st.markdown("**Retour coach**")
-                    st.info(coach_comment)
+                    st.divider()
+                    st.markdown("**Ton commentaire (verbatim)**")
+                    comment = st.text_area(
+                        " ",
+                        value=str(w.get("learner_comment") or ""),
+                        key=f"learner_comment_{camp.get('id')}_{week_n}",
+                        height=90,
+                        placeholder="Ex: j’ai fait l’action 1, pas eu le temps pour l’action 2.",
+                        label_visibility="collapsed",
+                    )
 
-                if st.button("💾 Enregistrer mon update", key=f"save_learner_week_{camp.get('id')}_{week_n}", use_container_width=True):
-                    now = now_iso()
-                    w["actions"] = actions
-                    w["learner_comment"] = comment
-                    w["updated_at"] = now
-                    camp["updated_at"] = now
+                    coach_comment = str(w.get("coach_comment") or "").strip()
+                    if coach_comment:
+                        st.markdown("**Retour coach**")
+                        st.info(coach_comment)
 
-                    campaigns = _upsert_campaign(campaigns, camp)
-                    save_campaigns(campaigns)
-                    st.success("OK ✅")
-                    st.rerun()
+                    if st.button(
+                        "💾 Enregistrer mon update",
+                        key=f"save_learner_week_{camp.get('id')}_{week_n}",
+                        use_container_width=True,
+                    ):
+                        now = now_iso()
+                        w["actions"] = actions
+                        w["learner_comment"] = comment
+                        w["updated_at"] = now
+                        camp["updated_at"] = now
+
+                        campaigns = _upsert_campaign(campaigns, camp)
+                        save_campaigns(campaigns)
+                        st.success("OK ✅")
+                        st.rerun()

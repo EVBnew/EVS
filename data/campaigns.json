@@ -1,126 +1,134 @@
 [
   {
-    "id": "camp_req_c3c37d2554",
-    "request_id": "req_c3c37d2554",
+    "id": "camp_req_f4afac9c2a",
+    "request_id": "req_f4afac9c2a",
     "learner_email": "nguyen.valery1@gmail.com",
-    "coach_email": "nguyen.valery1@gmail.com",
-    "objective": "Réduire le temps d'change avec mes interlocuteurs",
-    "context": "souvent, je suis débordé par mes collaborateurs et collègues et je n'arrive pas à les stopper, mettant mon travail en péril ainsi que ma charge de travail puisque je prends du retard",
-    "weeks": 1,
-    "status": "draft",
-    "program_text": "",
-    "weekly_plan": [
-      {
-        "week": 1,
-        "objective_week": "",
-        "actions": [],
-        "learner_comment": "",
-        "coach_comment": "",
-        "updated_at": ""
-      }
-    ],
-    "kickoff_message": "",
-    "created_at": "2026-01-27T10:50:54.296003+00:00",
-    "updated_at": "2026-01-27T10:50:54.296020+00:00",
-    "events": [
-      {
-        "ts": "2026-01-27T10:50:54.296038+00:00",
-        "actor": "coach",
-        "type": "campaign_created",
-        "payload": {}
-      }
-    ],
-    "supports": [],
-    "program": [
-      {
-        "week": 1,
-        "objective_week": "",
-        "actions": [],
-        "learner_comment": "",
-        "coach_comment": "",
-        "updated_at": ""
-      }
-    ],
-    "messages": [],
-    "checkpoints": {
-      "checkin": {
-        "done": false,
-        "date": null
-      },
-      "checkout": {
-        "done": false,
-        "date": null
-      },
-      "touchpoints": [
-        {
-          "week": 1,
-          "done": false,
-          "date": null,
-          "note": ""
-        }
-      ]
-    }
-  },
-  {
-    "id": "camp_req_6b74586a99",
-    "request_id": "req_6b74586a99",
-    "learner_email": "nguyen.valery1@gmail.com",
-    "coach_email": "nguyen.valery1@gmail.com",
-    "objective": "devenir PM",
-    "context": "Trouver une mission dans l'entreprise pour renforcer mes aptitudes de chef de projet , sachant qu'aujourd'hui je suis plus en PMO, c'est à dire que je consolide les deck, j'organise les rituels en restant à la surface, alors qu'un PM est aussi en capacité d'impacter le cours du projet en ayant une compréhension à la fois fonctionnelle et technique.",
+    "coach_email": "contact@everboarding.fr",
+    "objective": "Travailler mon relachement en compétition de judo",
+    "context": "souvent en compétition, je développe beaucoup de force, alors que j'ai un judo plutôt mobile en entrainement. Du coup, je ne parviens pas à varier mes enchainements, et je suis aussi fatigué de mes combats",
     "weeks": 3,
-    "status": "draft",
-    "program_text": "**Programme EVERSKILLS : Devenir Chef de Projet (PM)**\n\n**Objectif SMART :** D'ici 3 semaines, acquérir les compétences nécessaires pour gérer un projet de manière autonome en participant activement à une mission de projet au sein de l'entreprise.\n\n### Semaine 1 : Comprendre les Fondamentaux du Management de Projet\n\n- **Objectif de la semaine :** Identifier les rôles et responsabilités d'un Chef de Projet.\n  \n- **Actions terrain :**\n  1. Rencontrer un Chef de Projet senior pour discuter de son rôle et de ses défis quotidiens. DRESSER UN COMPARATIF AVEC LA FONCTION DE PMO\n  2. Participer à une réunion de projet en tant qu'observateur pour comprendre le fonctionnement d'une équipe projet.\n  3. Lister les outils et méthodologies utilisés par les PM dans votre entreprise (ex : Agile, Scrum, Waterfall).\n\n- **Rappel de connaissance :** Revoir les 5 phases du cycle de vie d'un projet (initiation, planification, exécution, contrôle, clôture).\n\n- **Indicateur :** Rédiger un compte-rendu de la réunion observée et des points clés appris.\n\n### Semaine 2 : Développer des Compétences Techniques et Fonctionnelles\n\n- **Objectif de la semaine :** Acquérir des connaissances techniques pertinentes pour le projet en cours.\n  \n- **Actions terrain :**\n  1. Choisir un aspect technique du projet (ex : logiciel utilisé) et suivre une formation en ligne ou un tutoriel.\n  2. Demander à un membre de l'équipe technique de vous expliquer les enjeux techniques du projet.\n  3. Participer à une session de brainstorming pour proposer des améliorations ou des solutions.\n\n- **Rappel de connaissance :** Étudier les principaux outils de gestion de projet (ex : Trello, Jira, MS Project) et leurs fonctionnalités.\n\n- **Indicateur :** Présenter un résumé des connaissances acquises à l’équipe lors d’une réunion.\n\n### Semaine 3 : Prendre des Initiatives et Gérer des Tâches\n\n- **Objectif de la semaine :** Gérer une petite tâche ou un sous-projet sous la supervision d'un PM.\n  \n- **Actions terrain :**\n  1. Proposer de prendre en charge un aspect spécifique du projet (ex : suivi d'une action, mise à jour d'un tableau de bord).\n  2. Organiser une réunion de suivi pour faire le point sur l'avancement des tâches et recueillir des feedbacks.\n  3. Évaluer les risques associés à votre tâche et proposer des solutions.\n\n- **Rappel de connaissance :** Revoir les techniques de gestion des risques en projet.\n\n- **Indicateur :** Évaluer la satisfaction de votre superviseur sur la gestion de votre tâche.\n\n**Message à l’apprenant :** Chaque semaine est une étape vers votre objectif. Soyez curieux, prenez des initiatives et n'hésitez pas à demander de l'aide. Vous êtes sur la bonne voie pour devenir un Chef de Projet impactant !",
+    "status": "active",
+    "program_text": "**Programme EVERSKILLS : Améliorer le relâchement en compétition de judo**\n\n**Objectif SMART :** D’ici 3 semaines, réduire l’utilisation de la force brute en compétition de 30% et augmenter la fluidité des enchaînements, mesurée par le nombre d’actions variées réalisées par combat.\n\n### Semaine 1 : Prendre conscience de la force\n\n- **Objectif de la semaine :** Identifier les moments où je force trop dans mes combats.\n  \n- **Actions terrain :**\n  1. Entraînement : JE ME POSE APRES CHAQUE RANDORI et JE M'AUTO-EVALUE DE 1 à 5 (cible 3) sur l'utilisation de la FORCE)\n  2. Entraînement : A LA FIN DE LA SEANCE, JE NOTE LES SEQUENCES OU LA FORCE S'EST IMPOSEE, POURQUOI? \n  3. Réflexion : Tenir un journal de bord après chaque combat pour noter mes sensations et mes choix techniques.\n\n- **Rappel de connaissance :** La force brute peut limiter la créativité et l’adaptabilité. Le judo repose sur le principe de l’utilisation de la force de l’adversaire.\n\n- **Indicateur :** Nombre de moments identifiés où j’ai utilisé trop de force dans mes combats.\n\n### Semaine 2 : Intégrer la fluidité\n\n- **Objectif de la semaine :** Commencer à intégrer des enchaînements variés dans mes combats.\n  \n- **Actions terrain :**\n  1. Entraînement : Pratiquer des enchaînements spécifiques en mettant l’accent sur la fluidité et la transition entre les techniques.\n  2. Simulation : Réaliser des combats d’entraînement en imposant un quota d’enchaînements variés (minimum 5 par combat).\n  3. Visualisation : Avant de dormir, visualiser des combats où je reste relâché et fluide.\n\n- **Rappel de connaissance :** La fluidité dans le judo permet de mieux gérer l’énergie et de surprendre l’adversaire.\n\n- **Indicateur :** Nombre d’enchaînements variés réalisés par combat en entraînement.\n\n### Semaine 3 : Évaluer et ajuster\n\n- **Objectif de la semaine :** Évaluer les progrès réalisés et ajuster ma stratégie en compétition.\n  \n- **Actions terrain :**\n  1. Entraînement : Combats simulés avec un partenaire, en se concentrant sur le relâchement et l’utilisation d’enchaînements variés.\n  2. Retour d’expérience : Demander à un entraîneur ou un partenaire de me donner un feedback sur ma fluidité et mes choix techniques en combat.\n  3. Préparation mentale : Pratiquer des exercices de respiration avant chaque combat pour rester calme et relâché.\n\n- **Rappel de connaissance :** La gestion du stress et des émotions est essentielle pour maintenir un relâchement optimal en compétition.\n\n- **Indicateur :** Évaluation par l’entraîneur sur ma fluidité et le nombre d’enchaînements variés en compétition.\n\n---\n\n**Message à l’apprenant :** Chaque étape de ce programme est une occasion d’apprendre et de progresser. Rappelle-toi que le relâchement est aussi une compétence qui se travaille. Sois patient avec toi-même et reste concentré sur tes objectifs. Tu es capable de réaliser de grandes choses !",
     "weekly_plan": [
       {
         "week": 1,
-        "objective_week": "",
-        "actions": [],
-        "learner_comment": "la fonction de PM est plus claire et surtout je vois la différence par rapport à celle de PMO",
-        "coach_comment": "Parfait, maintenant passons à la suite",
-        "updated_at": "2026-01-27T13:24:10.574000+00:00"
+        "objective_week": "** Identifier les moments où je force trop dans mes combats.",
+        "actions": [
+          {
+            "text": "Entraînement : RESSENTIR LAFORCE PAR MON NIVEAU D'EPUISEMENT APRES  un combat",
+            "status": "partial"
+          },
+          {
+            "text": "Entraînement : NOTER les moments où j’utilise trop de force DANS LE RANDORI QUE JE VIENS DE FAIRE",
+            "status": "partial"
+          },
+          {
+            "text": "Réflexion : A QUELS MOMENTS LA FORCE EST ARRIVEE, POURQUOI J'AI REAGIS PAR LA FORCE, SUITE A QUELLE ACTION DE MON PARTENAIRE",
+            "status": "done"
+          }
+        ],
+        "learner_comment": "excellent",
+        "coach_comment": "Bravo on enchaine par la s2",
+        "updated_at": "2026-01-30T15:24:36.804644+00:00"
       },
       {
         "week": 2,
-        "objective_week": "",
-        "actions": [],
-        "learner_comment": "semaine compliquée, j'ai pas pu faire ce que je voulais",
-        "coach_comment": "dernière étape",
-        "updated_at": "2026-01-27T13:28:35.556329+00:00"
+        "objective_week": "** Commencer à intégrer des enchaînements variés dans mes combats.",
+        "actions": [
+          {
+            "text": "Entraînement : Pratiquer des enchaînements spécifiques en mettant l’accent SUR LA PRISE DE KUMIKATA: JAMAIS DIRECT, ASPIRER, PIVOTER,",
+            "status": "done"
+          },
+          {
+            "text": "Simulation : Réaliser des combats d’entraînement en imposant un quota d’enchaînements variés (minimum 5 par combat).",
+            "status": "done"
+          },
+          {
+            "text": "Visualisation : TENIR UN JOURNAL DES COMBATS OU ON MARQUE LES PREUVES DE RELACHEMENT",
+            "status": "not_started"
+          }
+        ],
+        "learner_comment": "super",
+        "coach_comment": "c'est bien, on finit par s3",
+        "updated_at": "2026-01-30T15:26:12.842303+00:00"
       },
       {
         "week": 3,
-        "objective_week": "",
-        "actions": [],
-        "learner_comment": "super j'ai terminé",
-        "coach_comment": "",
-        "updated_at": "2026-01-27T13:29:22.779420+00:00"
+        "objective_week": "** Évaluer les progrès réalisés et ajuster ma stratégie en compétition.",
+        "actions": [
+          {
+            "text": "Entraînement : Combats simulés avec un partenaire, en se concentrant sur le relâchement et l’utilisation d’enchaînements variés.",
+            "status": "done"
+          },
+          {
+            "text": "Retour d’expérience : Demander à un entraîneur ou un partenaire de me donner un feedback sur ma fluidité et mes choix techniques en combat.",
+            "status": "done"
+          },
+          {
+            "text": "Préparation mentale : Pratiquer des exercices de respiration avant chaque combat pour rester calme et relâché.",
+            "status": "done"
+          }
+        ],
+        "learner_comment": "incryable",
+        "coach_comment": "Bravo à nouveau",
+        "updated_at": "2026-01-30T15:27:31.165270+00:00"
       }
     ],
-    "kickoff_message": "Bonjour [prénom du learner], \n\nMerci pour ta demande qui est très clair. Bravo, c'est déjà un premier pas essentiel d'exprimer son projet avec clarté. \nJ'ai également pu produire un programme de travail sur la durée souhaitée ([durée souhaitée]). \n\nJe te propose de nous en parler lors du rendez-vous de démarrage. \n\n Voici quelques options de dates:\n[compléter: Option 1]\n[compléter: Option 2]\n[compléter: Option 3]\n\nJ'espère que l'une d'entre elle te conviendra. \n\nD'ici là je reste disponible pour toute question. \n\nA bientôt. \n\n[Prénom du coach]",
-    "created_at": "2026-01-27T13:02:15.508279+00:00",
-    "updated_at": "2026-01-27T13:29:22.779420+00:00",
+    "kickoff_message": "Bonjour Nguyen,\n\nMerci pour ta demande, elle est très claire. Bravo : exprimer son objectif (Travailler mon relachement en compétition de judo) avec précision, c’est déjà un premier pas essentiel.\n\nJ’ai préparé un programme sur 3 semaine(s). Je te propose qu’on en parle lors d’un rendez-vous de démarrage.\n\nVoici quelques options de dates :\n- Option 1 : [à compléter]\n- Option 2 : [à compléter]\n- Option 3 : [à compléter]\n\nDis-moi ce qui te convient le mieux. D’ici là, je reste disponible.\n\nÀ bientôt,\nContact",
+    "closing_message": "Cher/Chère Nguyen,\n\nÇa a été un réel plaisir de t’accompagner dans ton objectif : Travailler mon relachement en compétition de judo.\n\nAu cours de ces 3 semaine(s), tu as réalisé les activités proposées en intégrant les retours discutés lors de nos points hebdomadaires.\n\nEt maintenant ?\nTu peux entrer dans une phase de réflexivité : devenir ton/ta propre coach, avec un regard précis et bienveillant.\nSi tu veux, on peut aussi rester en contact de temps en temps : je serais ravi de suivre ton évolution.\n\nÀ nouveau : bravo pour le chemin parcouru.\n\nAu plaisir d’échanger,\nContact",
+    "created_at": "2026-01-30T15:11:05.720100+00:00",
+    "updated_at": "2026-01-30T15:27:48.859851+00:00",
     "events": [
       {
-        "ts": "2026-01-27T13:02:15.508303+00:00",
+        "ts": "2026-01-30T15:11:05.720128+00:00",
         "actor": "coach",
         "type": "campaign_created",
         "payload": {}
       },
       {
-        "ts": "2026-01-27T13:04:20.307791+00:00",
+        "ts": "2026-01-30T15:15:19.492630+00:00",
         "actor": "coach",
         "type": "program_saved",
         "payload": {}
       },
       {
-        "ts": "2026-01-27T13:10:48.834113+00:00",
+        "ts": "2026-01-30T15:15:20.741327+00:00",
+        "actor": "coach",
+        "type": "program_published",
+        "payload": {}
+      },
+      {
+        "ts": "2026-01-30T15:16:47.731317+00:00",
         "actor": "coach",
         "type": "kickoff_saved",
         "payload": {}
       },
       {
-        "ts": "2026-01-27T13:24:10.574023+00:00",
+        "ts": "2026-01-30T15:16:50.283885+00:00",
+        "actor": "coach",
+        "type": "program_published",
+        "payload": {}
+      },
+      {
+        "ts": "2026-01-30T15:18:47.908709+00:00",
+        "actor": "coach",
+        "type": "program_saved",
+        "payload": {}
+      },
+      {
+        "ts": "2026-01-30T15:21:22.284860+00:00",
+        "actor": "coach",
+        "type": "program_published",
+        "payload": {}
+      },
+      {
+        "ts": "2026-01-30T15:21:27.596580+00:00",
+        "actor": "coach",
+        "type": "kickoff_saved",
+        "payload": {}
+      },
+      {
+        "ts": "2026-01-30T15:24:36.804660+00:00",
         "actor": "coach",
         "type": "coach_week_saved",
         "payload": {
@@ -128,12 +136,26 @@
         }
       },
       {
-        "ts": "2026-01-27T13:28:35.556343+00:00",
+        "ts": "2026-01-30T15:26:12.842319+00:00",
         "actor": "coach",
         "type": "coach_week_saved",
         "payload": {
           "week": 2
         }
+      },
+      {
+        "ts": "2026-01-30T15:27:31.165288+00:00",
+        "actor": "coach",
+        "type": "coach_week_saved",
+        "payload": {
+          "week": 3
+        }
+      },
+      {
+        "ts": "2026-01-30T15:27:48.859865+00:00",
+        "actor": "coach",
+        "type": "closing_saved",
+        "payload": {}
       }
     ],
     "supports": [],
@@ -193,132 +215,255 @@
           "note": ""
         }
       ]
-    }
+    },
+    "weekly_init_program_hash": "22996ba95f01f5912ab231de9f7affde",
+    "activated_at": "2026-01-30T15:23:08.367821+00:00"
   },
   {
-    "id": "camp_req_83462bb301",
-    "request_id": "req_83462bb301",
+    "id": "camp_req_246be20f78",
+    "request_id": "req_246be20f78",
     "learner_email": "nguyen.valery1@gmail.com",
-    "coach_email": "valery.nguyen@yahoo.fr",
-    "objective": "développer mon assertivité",
-    "context": "je postule à un job en interne, je dois absolument renforcer mon impact notamment vis-à vis des potentiels collaborateurs que j'aurai à manager;",
+    "coach_email": "contact@everboarding.fr",
+    "objective": "je voudrais savoir placer uchi mata",
+    "context": "je suis débutant ceinture jaune de judo, j'ai 33 ans, j'aimerais savoir entrer uchi mata",
     "weeks": 1,
-    "status": "draft",
-    "program_text": "",
+    "status": "closed",
+    "program_text": "**Programme EVERSKILLS : Apprendre à placer Uchi Mata**\n\n**Objectif SMART** : D’ici la fin de la semaine, je serai capable d’exécuter correctement le mouvement de Uchi Mata en démonstration avec un partenaire.\n\n### Semaine 1\n\n**Objectif de la semaine** : Maîtriser les bases du mouvement Uchi Mata.\n\n**Actions terrain** :\n1. **Visionner des tutoriels** : Regarder 2 vidéos pédagogiques sur Uchi Mata pour comprendre les techniques et les mouvements clés.\n2. **Pratique en duo** : APRES UN TRAVAIL D'ETIREMENT, REPRENDRE LES POINTS CLES DE LA VIDEO, NOTER LES SENSATIONS (PIEDS POINTES UKE, BRAS MANCHE SOULEVEE, MA CEINTURE SOUS LA SIENNE, PENDULE)  avec un partenaire sur le placement des pieds et le mouvement de balancier pendant 30 minutes, 2 fois dans la semaine.\n3. **Feedback** : Demander à un entraîneur ou un judoka plus expérimenté de corriger votre posture et votre exécution lors d'une séance d'entraînement.\n\n**Rappel de connaissance** : Uchi Mata est un mouvement de projection qui utilise le déséquilibre de l’adversaire, en soulevant une jambe pour l’amener au sol. La clé est de bien positionner son corps et de synchroniser le mouvement.\n\n**Indicateur** : Être capable de réaliser Uchi Mata avec un partenaire sans assistance, en respectant les étapes fondamentales.\n\n---\n\n**Message à l’apprenant** : Cette semaine est une belle opportunité pour poser les bases de votre technique. Restez concentré et n’hésitez pas à demander des conseils. Chaque petit progrès compte, alors donnez le meilleur de vous-même !",
     "weekly_plan": [
       {
         "week": 1,
         "objective_week": "",
         "actions": [],
-        "learner_comment": "",
-        "coach_comment": "",
-        "updated_at": ""
+        "learner_comment": "ok",
+        "coach_comment": "ok",
+        "updated_at": "2026-01-30T16:40:17.245469+00:00"
       }
     ],
-    "kickoff_message": "",
-    "created_at": "2026-01-29T14:27:23.826025+00:00",
-    "updated_at": "2026-01-29T14:27:23.826047+00:00",
+    "kickoff_message": "Bonjour Bonjour,\n\nMerci pour ta demande qui est très claire. Bravo, c'est déjà un premier pas essentiel : exprimer son projet avec clarté.\nJ'ai pu préparer un programme de travail sur la durée souhaitée (1 semaines).\n\nJe te propose de nous en parler lors du rendez-vous de démarrage.\n\nVoici quelques options de dates:\n- [Option 1]\n- [Option 2]\n- [Option 3]\n\nJ'espère que l'une d'entre elles te conviendra.\n\nD'ici là je reste disponible pour toute question.\n\nA bientôt.\n\nTon coach",
+    "closure_message": "Cher Bonjour,\n\nÇa a été un réel plaisir de t'accompagner dans ton objectif : je voudrais savoir placer uchi mata.\nAu cours de ces 1 semaines, tu as réalisé avec brio les activités proposées, en prenant en compte les retours que nous avons évoqués ensemble lors des points hebdomadaires.\n\nEt maintenant ?\nUne autre phase peut commencer : la réflexivité — être son propre coach avec un regard précis et bienveillant.\n\nNous pouvons aussi rester en contact en nous écrivant de temps en temps — ça me ferait très plaisir de suivre ton évolution.\nEt si tu souhaites approfondir certains concepts dans ce format, je resterai disponible.\n\nBonjour, à nouveau, ça a été un vrai plaisir de faire ce chemin ensemble.\n\nAu plaisir de nous revoir et d'échanger.\n\nTon coach",
+    "created_at": "2026-01-30T16:32:42.684869+00:00",
+    "updated_at": "2026-01-30T16:40:21.811669+00:00",
     "events": [
       {
-        "ts": "2026-01-29T14:27:23.826079+00:00",
-        "actor": "coach",
-        "type": "campaign_created",
-        "payload": {}
-      }
-    ],
-    "supports": [],
-    "program": [
-      {
-        "week": 1,
-        "objective_week": "",
-        "actions": [],
-        "learner_comment": "",
-        "coach_comment": "",
-        "updated_at": ""
-      }
-    ],
-    "messages": [],
-    "checkpoints": {
-      "checkin": {
-        "done": false,
-        "date": null
-      },
-      "checkout": {
-        "done": false,
-        "date": null
-      },
-      "touchpoints": [
-        {
-          "week": 1,
-          "done": false,
-          "date": null,
-          "note": ""
-        }
-      ]
-    }
-  },
-  {
-    "id": "camp_req_d17a9c80ef8d",
-    "request_id": "req_d17a9c80ef8d",
-    "learner_email": "",
-    "coach_email": "valery.nguyen@yahoo.fr",
-    "objective": "",
-    "context": "",
-    "weeks": 3,
-    "status": "program_ready",
-    "program_text": "**Programme EVERSKILLS : Réduire le temps d'échange avec mes interlocuteurs**\n\n**Objectif SMART :** D'ici la fin de la semaine, réduire le temps d'échange avec mes collaborateurs de 30% en utilisant des techniques de communication efficaces.\n\n### Semaine 1\n\n**Objectif de la semaine :** Identifier et appliquer des techniques pour structurer mes échanges.\n\n**Actions terrain :**\n1. PREPARER UNE RESTITUTION ORALE* Avant chaque réunion ou échange, rédigez une liste de 3 à 5 points clés à aborder. Cela vous aidera à rester concentré et à éviter les digressions.\n2. **Utiliser un timer :** Limitez chaque échange à 15 minutes. Utilisez un minuteur pour vous rappeler de rester sur le sujet et de respecter le temps imparti.\n3. **Pratiquer l'écoute active :** Posez des questions ouvertes pour clarifier les besoins de vos interlocuteurs et reformulez leurs propos pour éviter les malentendus.\n\n**Rappel de connaissance :** La communication efficace repose sur la clarté et la concision. En structurant vos échanges, vous économisez du temps et améliorez la compréhension.\n\n**Indicateur :** Suivez le temps passé en réunions et échanges sur une feuille de suivi. Notez le temps moyen par échange avant et après la mise en place des actions.\n\n---\n\n**Message à l’apprenant :** Cette semaine, concentrez-vous sur la structure de vos échanges. Chaque minute compte, et en appliquant ces techniques, vous verrez une réelle différence dans votre charge de travail. Restez déterminé et observez vos progrès !",
-    "weekly_plan": [
-      {
-        "week": 1,
-        "objective_week": "",
-        "actions": [],
-        "learner_comment": "",
-        "coach_comment": "",
-        "updated_at": ""
-      },
-      {
-        "week": 2,
-        "objective_week": "",
-        "actions": [],
-        "learner_comment": "",
-        "coach_comment": "",
-        "updated_at": ""
-      },
-      {
-        "week": 3,
-        "objective_week": "",
-        "actions": [],
-        "learner_comment": "",
-        "coach_comment": "",
-        "updated_at": ""
-      }
-    ],
-    "kickoff_message": "Cher Arnaud, bienvenu dans tonprogramme et ravi de t'accompagner.",
-    "created_at": "2026-01-29T14:27:27.554984+00:00",
-    "updated_at": "2026-01-29T14:29:12.990916+00:00",
-    "events": [
-      {
-        "ts": "2026-01-29T14:27:27.555063+00:00",
+        "ts": "2026-01-30T16:32:42.684922+00:00",
         "actor": "coach",
         "type": "campaign_created",
         "payload": {}
       },
       {
-        "ts": "2026-01-29T14:28:35.114453+00:00",
+        "ts": "2026-01-30T16:35:53.256265+00:00",
         "actor": "coach",
         "type": "program_saved",
         "payload": {}
       },
       {
-        "ts": "2026-01-29T14:28:47.313918+00:00",
+        "ts": "2026-01-30T16:36:00.864659+00:00",
         "actor": "coach",
         "type": "program_published",
         "payload": {}
       },
       {
-        "ts": "2026-01-29T14:29:12.990942+00:00",
+        "ts": "2026-01-30T16:36:13.775143+00:00",
+        "actor": "coach",
+        "type": "kickoff_autofill",
+        "payload": {}
+      },
+      {
+        "ts": "2026-01-30T16:36:24.203074+00:00",
         "actor": "coach",
         "type": "kickoff_saved",
+        "payload": {}
+      },
+      {
+        "ts": "2026-01-30T16:37:19.645093+00:00",
+        "actor": "coach",
+        "type": "program_published",
+        "payload": {}
+      },
+      {
+        "ts": "2026-01-30T16:39:40.440652+00:00",
+        "actor": "coach",
+        "type": "coach_week_saved",
+        "payload": {
+          "week": 1
+        }
+      },
+      {
+        "ts": "2026-01-30T16:40:17.245482+00:00",
+        "actor": "coach",
+        "type": "coach_week_saved",
+        "payload": {
+          "week": 1
+        }
+      },
+      {
+        "ts": "2026-01-30T16:40:21.811672+00:00",
+        "actor": "coach",
+        "type": "campaign_closed",
+        "payload": {}
+      }
+    ],
+    "supports": [],
+    "program": [
+      {
+        "week": 1,
+        "objective_week": "",
+        "actions": [],
+        "learner_comment": "",
+        "coach_comment": "",
+        "updated_at": ""
+      }
+    ],
+    "messages": [],
+    "checkpoints": {
+      "checkin": {
+        "done": false,
+        "date": null
+      },
+      "checkout": {
+        "done": false,
+        "date": null
+      },
+      "touchpoints": [
+        {
+          "week": 1,
+          "done": false,
+          "date": null,
+          "note": ""
+        }
+      ]
+    },
+    "activated_at": "2026-01-30T16:37:54.969196+00:00",
+    "closed_at": "2026-01-30T16:40:21.811658+00:00"
+  },
+  {
+    "id": "camp_req_b14db30a1f",
+    "request_id": "req_b14db30a1f",
+    "learner_email": "nguyen.valery1@gmail.com",
+    "coach_email": "contact@everboarding.fr",
+    "objective": "Juno Kata (judo)",
+    "context": "pour mon passage du 5e dan, je dois préparer le juno kata",
+    "weeks": 3,
+    "status": "program_ready",
+    "program_text": "**Programme EVERSKILLS : Préparation au Juno Kata (5e dan)**\n\n**Objectif SMART :** D’ici 3 semaines, maîtriser les 15 mouvements du Juno Kata avec une exécution fluide et précise, en obtenant une note d’au moins 85% lors de l’évaluation.\n\n---\n\n**Semaine 1 : Familiarisation et technique de base**\n\n- **Objectif de semaine :** Apprendre et comprendre les 5 premiers mouvements du Juno Kata.\n  \n- **Actions terrain :**\n  1. Pratiquer chaque mouvement 10 fois par jour, en se concentrant sur la posture et la fluidité.\n  2. Filmer ses séances pour analyser et corriger les erreurs.\n  3. Travailler avec un partenaire pour recevoir des feedbacks sur l’exécution.\n\n- **Rappel de connaissance :** Étudier les principes fondamentaux du Juno Kata et leur signification.\n\n- **Indicateur :** Être capable de démontrer les 5 mouvements avec une précision de 80% lors d’une séance de pratique.\n\n---\n\n**Semaine 2 : Consolidation et enchaînement**\n\n- **Objectif de semaine :** Intégrer les 5 mouvements suivants et les enchaîner avec ceux de la semaine 1.\n  \n- **Actions terrain :**\n  1. Répéter les 10 premiers mouvements en les enchaînant 5 fois, en se concentrant sur la fluidité.\n  2. Organiser une séance avec un expert pour obtenir des conseils sur l’enchaînement.\n  3. Pratiquer l’enchaînement en miroir devant un miroir pour corriger la posture.\n\n- **Rappel de connaissance :** Analyser les erreurs courantes dans l’exécution des mouvements et comment les corriger.\n\n- **Indicateur :** Réussir à enchaîner les 10 mouvements avec une fluidité de 75% lors d’une pratique.\n\n---\n\n**Semaine 3 : Perfectionnement et évaluation**\n\n- **Objectif de semaine :** Maîtriser l'ensemble des 15 mouvements du Juno Kata et se préparer à l’évaluation finale.\n  \n- **Actions terrain :**\n  1. Pratiquer l’intégralité du Juno Kata au moins 3 fois par semaine, en se chronométrant pour améliorer la rapidité.\n  2. Simuler l’évaluation avec un partenaire, en respectant les critères d’évaluation.\n  3. Réviser les mouvements difficiles et les corriger avec l’aide d’un coach.\n\n- **Rappel de connaissance :** Revoir les critères d’évaluation pour le passage du 5e dan.\n\n- **Indicateur :** Obtenir une note d’au moins 85% lors de la simulation d’évaluation.\n\n---\n\n**Message à l’apprenant :** Chaque semaine est une étape vers votre objectif. Restez concentré, pratiquez avec détermination et n'hésitez pas à demander des retours. Vous êtes sur la bonne voie pour réussir votre passage au 5e dan !",
+    "weekly_plan": [
+      {
+        "week": 1,
+        "objective_week": "Familiarisation et technique de base**",
+        "actions": [
+          {
+            "text": "Pratiquer chaque mouvement 10 fois par jour, en se concentrant sur la posture et la fluidité.",
+            "status": "not_started"
+          },
+          {
+            "text": "Filmer ses séances pour analyser et corriger les erreurs.",
+            "status": "not_started"
+          },
+          {
+            "text": "Travailler avec un partenaire pour recevoir des feedbacks sur l’exécution.",
+            "status": "not_started"
+          }
+        ],
+        "learner_comment": "",
+        "coach_comment": "",
+        "updated_at": ""
+      },
+      {
+        "week": 2,
+        "objective_week": "Consolidation et enchaînement**",
+        "actions": [
+          {
+            "text": "Répéter les 10 premiers mouvements en les enchaînant 5 fois, en se concentrant sur la fluidité.",
+            "status": "not_started"
+          },
+          {
+            "text": "Organiser une séance avec un expert pour obtenir des conseils sur l’enchaînement.",
+            "status": "not_started"
+          },
+          {
+            "text": "Pratiquer l’enchaînement en miroir devant un miroir pour corriger la posture.",
+            "status": "not_started"
+          }
+        ],
+        "learner_comment": "",
+        "coach_comment": "",
+        "updated_at": ""
+      },
+      {
+        "week": 3,
+        "objective_week": "Perfectionnement et évaluation**",
+        "actions": [
+          {
+            "text": "Pratiquer l’intégralité du Juno Kata au moins 3 fois par semaine, en se chronométrant pour améliorer la rapidité.",
+            "status": "not_started"
+          },
+          {
+            "text": "Simuler l’évaluation avec un partenaire, en respectant les critères d’évaluation.",
+            "status": "not_started"
+          },
+          {
+            "text": "Réviser les mouvements difficiles et les corriger avec l’aide d’un coach.",
+            "status": "not_started"
+          }
+        ],
+        "learner_comment": "",
+        "coach_comment": "",
+        "updated_at": ""
+      }
+    ],
+    "kickoff_message": "Bonjour,\n\nMerci pour ta demande qui est très claire. Bravo, c'est déjà un premier pas essentiel : exprimer son projet avec clarté.\nJ'ai pu préparer un programme de travail sur la durée souhaitée (3 semaines).\n\nJe te propose de nous en parler lors du rendez-vous de démarrage.\n\nVoici quelques options de dates:\n- [Option 1]\n- [Option 2]\n- [Option 3]\n\nJ'espère que l'une d'entre elles te conviendra.\n\nD'ici là je reste disponible pour toute question.\n\nA bientôt.\n\nTon coach",
+    "closure_message": "Bonjour,\n\nÇa a été un réel plaisir de t'accompagner dans ton objectif : Juno Kata (judo).\nAu cours de ces 3 semaines, tu as réalisé avec brio les activités proposées, en prenant en compte les retours que nous avons évoqués ensemble lors des points hebdomadaires.\n\nEt maintenant ?\nUne autre phase peut commencer : la réflexivité — être son propre coach avec un regard précis et bienveillant.\n\nNous pouvons aussi rester en contact en nous écrivant de temps en temps — ça me ferait très plaisir de suivre ton évolution.\nEt si tu souhaites approfondir certains concepts dans ce format, je resterai disponible.\n\n à nouveau, ça a été un vrai plaisir de faire ce chemin ensemble.\n\nAu plaisir de nous revoir et d'échanger.\n\nTon coach",
+    "created_at": "2026-01-30T17:54:18.583626+00:00",
+    "updated_at": "2026-01-30T17:59:23.510933+00:00",
+    "events": [
+      {
+        "ts": "2026-01-30T17:54:18.583698+00:00",
+        "actor": "coach",
+        "type": "campaign_created",
+        "payload": {}
+      },
+      {
+        "ts": "2026-01-30T17:55:43.466221+00:00",
+        "actor": "coach",
+        "type": "kickoff_autofill",
+        "payload": {}
+      },
+      {
+        "ts": "2026-01-30T17:58:00.827578+00:00",
+        "actor": "coach",
+        "type": "program_saved",
+        "payload": {
+          "weekly_synced": true
+        }
+      },
+      {
+        "ts": "2026-01-30T17:58:02.229565+00:00",
+        "actor": "coach",
+        "type": "program_published",
+        "payload": {}
+      },
+      {
+        "ts": "2026-01-30T17:58:04.120620+00:00",
+        "actor": "coach",
+        "type": "kickoff_saved",
+        "payload": {}
+      },
+      {
+        "ts": "2026-01-30T17:59:16.254808+00:00",
+        "actor": "coach",
+        "type": "closure_saved",
+        "payload": {}
+      },
+      {
+        "ts": "2026-01-30T17:59:17.688080+00:00",
+        "actor": "coach",
+        "type": "closure_autofill",
+        "payload": {}
+      },
+      {
+        "ts": "2026-01-30T17:59:23.510951+00:00",
+        "actor": "coach",
+        "type": "closure_saved",
         "payload": {}
       }
     ],
@@ -379,6 +524,7 @@
           "note": ""
         }
       ]
-    }
+    },
+    "weekly_init_program_hash": "fe7487ebea7d4bd6a6da0fb7d9d24ab6"
   }
 ]

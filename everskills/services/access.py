@@ -6,12 +6,10 @@ import hashlib
 import hmac
 import json
 import os
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from everskills.services.storage import now_iso
-
 
 BASE_DIR = Path(__file__).resolve().parents[2]  # EVERSKILLS/
 DATA_DIR = BASE_DIR / "data"
@@ -50,10 +48,6 @@ def _pbkdf2_hash(password: str, salt: bytes) -> bytes:
 
 
 def hash_password(password: str) -> str:
-    """
-    Returns a single string containing:
-    pbkdf2_sha256$iters$salt_b64$hash_b64
-    """
     if not password or len(password) < 4:
         raise ValueError("Password too short")
     salt = os.urandom(16)
@@ -83,8 +77,7 @@ def load_access() -> List[Dict[str, Any]]:
     data = _read_json(ACCESS_PATH, default=[])
     if not isinstance(data, list):
         return []
-    out = [x for x in data if isinstance(x, dict)]
-    return out
+    return [x for x in data if isinstance(x, dict)]
 
 
 def save_access(rows: List[Dict[str, Any]]) -> None:
@@ -104,6 +97,12 @@ def upsert_user(user: Dict[str, Any]) -> None:
     email = _norm_email(user.get("email", ""))
     if not email:
         raise ValueError("Missing email")
+
+    # normalize optional fields
+    user["email"] = email
+    user["first_name"] = str(user.get("first_name") or "").strip()
+    user["last_name"] = str(user.get("last_name") or "").strip()
+
     rows = load_access()
     replaced = False
     for i, u in enumerate(rows):
@@ -122,6 +121,8 @@ def create_user(
     password: str,
     status: str = "active",
     created_by: str = "system",
+    first_name: str = "",
+    last_name: str = "",
 ) -> Dict[str, Any]:
     email = _norm_email(email)
     role = (role or "").strip()
@@ -138,6 +139,8 @@ def create_user(
         "email": email,
         "role": role,
         "status": status,
+        "first_name": (first_name or "").strip(),
+        "last_name": (last_name or "").strip(),
         "password_hash": hash_password(password),
         "created_at": now_iso(),
         "updated_at": now_iso(),
@@ -180,31 +183,25 @@ def authenticate(email: str, password: str) -> Optional[Dict[str, Any]]:
         return None
     if not verify_password(password or "", str(u.get("password_hash") or "")):
         return None
+
     # Return a "safe" view (no hash)
     return {
         "email": email,
         "role": str(u.get("role") or "learner"),
         "status": str(u.get("status") or "active"),
+        "first_name": str(u.get("first_name") or "").strip(),
+        "last_name": str(u.get("last_name") or "").strip(),
     }
 
 
 def ensure_demo_seed() -> None:
-    """
-    For local demo / salon:
-    If access.json is empty, seed two accounts:
-    - Coach: contact@everboarding.fr
-    - Learner: nguyen.valery1@gmail.com
-    Password: demo1234 (change it in Organization once logged in as admin)
-    Also seeds an admin: admin@everboarding.fr
-    """
     rows = load_access()
     if rows:
         return
 
-    # Seed admin + coach + learner
-    create_user("admin@everboarding.fr", "admin", "demo1234", status="active", created_by="system")
-    create_user("contact@everboarding.fr", "coach", "demo1234", status="active", created_by="system")
-    create_user("nguyen.valery1@gmail.com", "learner", "demo1234", status="active", created_by="system")
+    create_user("admin@everboarding.fr", "admin", "demo1234", status="active", created_by="system", first_name="Admin")
+    create_user("contact@everboarding.fr", "coach", "demo1234", status="active", created_by="system", first_name="Coach")
+    create_user("nguyen.valery1@gmail.com", "learner", "demo1234", status="active", created_by="system", first_name="Valery")
 
 
 def require_login(session_user: Optional[Dict[str, Any]]) -> Tuple[bool, str]:

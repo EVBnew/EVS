@@ -1,4 +1,4 @@
-# pages/projects.py
+# pages/02_projects.py
 from __future__ import annotations
 
 import streamlit as st
@@ -13,22 +13,12 @@ if not ok:
     st.info("Retourne sur Welcome (app) pour te connecter.")
     st.stop()
 
-role = user["role"]
+role = (user.get("role") or "").strip()
 
 st.markdown("# Projects")
-st.caption("Route automatiquement vers l’espace opérationnel selon ton rôle.")
+st.caption("Router technique. Normalement, Welcome route déjà automatiquement.")
 
 if role == "learner":
-    st.success("Rôle learner détecté → ouverture Learner Space.")
-    if st.button("▶ Ouvrir Learner Space", use_container_width=True):
-        st.switch_page("pages/11_learner_space.py")
-
-    # auto-route
     st.switch_page("pages/11_learner_space.py")
-
 else:
-    st.success("Rôle coach/admin détecté → ouverture Coach Space.")
-    if st.button("▶ Ouvrir Coach Space", use_container_width=True):
-        st.switch_page("pages/10_coach_space.py")
-
     st.switch_page("pages/10_coach_space.py")

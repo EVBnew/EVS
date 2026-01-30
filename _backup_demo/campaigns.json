@@ -1,0 +1,132 @@
+[
+  {
+    "id": "camp_596b26691128",
+    "request_id": "req_a5698cab92e3",
+    "learner_email": "valery.nguyen@yahoo.fr",
+    "status": "coach_validated",
+    "weeks": 3,
+    "created_at": "2025-12-23T16:32:57.170540+00:00",
+    "updated_at": "2025-12-23T16:32:57.170553+00:00",
+    "weekly_plan": [
+      {
+        "week": 1,
+        "todo": "",
+        "done": false,
+        "learner_feedback": ""
+      },
+      {
+        "week": 2,
+        "todo": "",
+        "done": false,
+        "learner_feedback": ""
+      },
+      {
+        "week": 3,
+        "todo": "",
+        "done": false,
+        "learner_feedback": ""
+      }
+    ],
+    "coach_notes": ""
+  },
+  {
+    "id": "camp_e0b242d3d743",
+    "request_id": "req_84e6dd139a2e",
+    "learner_email": "valery.nguyen@yahoo.fr",
+    "status": "coach_validated",
+    "weeks": 3,
+    "created_at": "2025-12-23T15:13:37.511750+00:00",
+    "updated_at": "2025-12-23T15:13:37.511765+00:00",
+    "weekly_plan": [
+      {
+        "week": 1,
+        "todo": "",
+        "done": false,
+        "learner_feedback": ""
+      },
+      {
+        "week": 2,
+        "todo": "",
+        "done": false,
+        "learner_feedback": ""
+      },
+      {
+        "week": 3,
+        "todo": "",
+        "done": false,
+        "learner_feedback": ""
+      }
+    ],
+    "coach_notes": ""
+  },
+  {
+    "id": "camp_3de12ecc71c9",
+    "request_id": "req_4343c3174adb",
+    "learner_email": "valery.nguyen@yahoo.fr",
+    "coach_email": "valery.nguyen@yahoo.fr",
+    "objective": "Développer mon assertivité",
+    "context": "reprise du management d'une équipe très jeune",
+    "support_files": [
+      "C:\\Users\\nguye\\Desktop\\EVERSKILLS\\everskills\\temp_uploads\\file_f0bf05f8f1ba_Boussole management.JPG"
+    ],
+    "weeks": 3,
+    "status": "coach_validated",
+    "created_at": "2025-12-23T14:44:30.524035+00:00",
+    "updated_at": "2025-12-23T14:44:30.524053+00:00",
+    "coach_notes": "",
+    "plan": {
+      "reactivation": [],
+      "weekly_actions": [
+        {
+          "week": 1,
+          "actions": []
+        },
+        {
+          "week": 2,
+          "actions": []
+        },
+        {
+          "week": 3,
+          "actions": []
+        }
+      ]
+    },
+    "messages": [],
+    "learner_feedback": []
+  },
+  {
+    "id": "camp_e059a0418de2",
+    "request_id": "req_4343c3174adb",
+    "learner_email": "valery.nguyen@yahoo.fr",
+    "coach_email": "valery.nguyen@yahoo.fr",
+    "objective": "Développer mon assertivité",
+    "context": "reprise du management d'une équipe très jeune",
+    "support_files": [
+      "C:\\Users\\nguye\\Desktop\\EVERSKILLS\\everskills\\temp_uploads\\file_f0bf05f8f1ba_Boussole management.JPG"
+    ],
+    "weeks": 3,
+    "status": "coach_validated",
+    "created_at": "2025-12-23T14:44:34.054456+00:00",
+    "updated_at": "2025-12-23T14:44:34.054477+00:00",
+    "coach_notes": "",
+    "plan": {
+      "reactivation": [],
+      "weekly_actions": [
+        {
+          "week": 1,
+          "actions": []
+        },
+        {
+          "week": 2,
+          "actions": []
+        },
+        {
+          "week": 3,
+          "actions": []
+        }
+      ]
+    },
+    "messages": [],
+    "learner_feedback": []
+  }
+]

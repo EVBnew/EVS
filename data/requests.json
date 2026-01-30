@@ -1,94 +1,50 @@
 [
   {
-    "requests": [
-      {
-        "request_id": "d7e46b9e-29f4-41a9-9a92-be597c12e22e",
-        "learner_email": "valery.nguyen@yahoo.fr",
-        "coach_email": "nguyen.valery1@gmail.com",
-        "topic": "management d'équipe",
-        "goal": "m'aider à animer des réunions d'équipe",
-        "context": "dans le cadre d'une reprise de poste, je vais devoir animer 5 personnes en remote.",
-        "status": "ACCEPTED",
-        "created_at": "2026-01-21T14:40:30Z",
-        "updated_at": "2026-01-21T15:58:54Z"
-      }
-    ],
-    "id": "req_d17a9c80ef8d",
-    "supports": [],
-    "status": "in_progress",
-    "created_at": "2026-01-22T13:52:12.691088+00:00",
-    "updated_at": "2026-01-29T14:27:27.558154+00:00"
-  },
-  {
-    "id": "req_6c00ef44b0",
-    "ts": "2026-01-22T13:53:03.260762+00:00",
-    "email": "valery.nguyen@yahoo.fr",
-    "objective": "22 janvier: reprise du management d'une équipe",
-    "context": "dans cette équipe il y a d'anciens collègues, je dois apprendre à prendre de la distance sans casser le lien entre nous",
-    "weeks": 1,
-    "supports": [],
-    "status": "in_progress",
-    "created_at": "2026-01-22T13:53:03.260762+00:00",
-    "updated_at": "2026-01-22T13:53:14.599181+00:00"
-  },
-  {
-    "id": "req_af1748046e",
-    "ts": "2026-01-22T14:36:13.190783+00:00",
-    "email": "valery.nguyen@yahoo.fr",
-    "objective": "22 janvier (2e demande): préparer une prise de parole en public",
-    "context": "Chaque lundi, je dois prendre la parole en visio devant 30 personnes en anglais, je dois améliorer mon impact. Le sujet est le statut d'avancement de mon périmètre en tant que directeur de programme IT",
-    "weeks": 2,
-    "supports": [],
-    "status": "in_progress",
-    "created_at": "2026-01-22T14:36:13.190783+00:00",
-    "updated_at": "2026-01-22T14:36:30.258899+00:00"
-  },
-  {
-    "id": "req_67a03131b5",
-    "ts": "2026-01-22T15:38:03.648585+00:00",
-    "email": "valery.nguyen@yahoo.fr",
-    "objective": "demande 3: créer un impact à l'oral",
-    "context": "je me perds dans des détails, j'ai besoin d'être plus impactant quand je prends la parole car j'observe que l'attention de mes interlocuteurs à tendance à décroitre dans le fil de nos échanges, surtout en phase d'avant vente et de prospection",
-    "weeks": 2,
-    "supports": [],
-    "status": "in_progress",
-    "created_at": "2026-01-22T15:38:03.648585+00:00",
-    "updated_at": "2026-01-22T15:38:32.238707+00:00"
-  },
-  {
-    "id": "req_c3c37d2554",
-    "ts": "2026-01-23T16:06:06.426025+00:00",
+    "id": "req_c3bdff38ec",
+    "ts": "2026-01-30T15:10:21.876144+00:00",
     "email": "nguyen.valery1@gmail.com",
-    "objective": "Réduire le temps d'change avec mes interlocuteurs",
-    "context": "souvent, je suis débordé par mes collaborateurs et collègues et je n'arrive pas à les stopper, mettant mon travail en péril ainsi que ma charge de travail puisque je prends du retard",
-    "weeks": 1,
+    "objective": "Travailler mon relachement en compétition de judo",
+    "context": "souvent en compétition, je développe beaucoup de force, alors que j'ai un judo plutôt mobile en entrainement. Du coup, je ne parviens pas à varier mes enchainements, et je suis aussi fatigué de mes combats",
+    "weeks": 3,
     "supports": [],
-    "status": "in_progress",
-    "created_at": "2026-01-23T16:06:06.426025+00:00",
-    "updated_at": "2026-01-27T10:50:54.298231+00:00"
+    "status": "submitted",
+    "created_at": "2026-01-30T15:10:21.876144+00:00",
+    "updated_at": "2026-01-30T15:10:21.876144+00:00"
   },
   {
-    "id": "req_6b74586a99",
-    "ts": "2026-01-27T13:01:18.478513+00:00",
+    "id": "req_f4afac9c2a",
+    "ts": "2026-01-30T15:10:30.245826+00:00",
     "email": "nguyen.valery1@gmail.com",
-    "objective": "devenir PM",
-    "context": "Trouver une mission dans l'entreprise pour renforcer mes aptitudes de chef de projet , sachant qu'aujourd'hui je suis plus en PMO, c'est à dire que je consolide les deck, j'organise les rituels en restant à la surface, alors qu'un PM est aussi en capacité d'impacter le cours du projet en ayant une compréhension à la fois fonctionnelle et technique.",
+    "objective": "Travailler mon relachement en compétition de judo",
+    "context": "souvent en compétition, je développe beaucoup de force, alors que j'ai un judo plutôt mobile en entrainement. Du coup, je ne parviens pas à varier mes enchainements, et je suis aussi fatigué de mes combats",
     "weeks": 3,
     "supports": [],
     "status": "in_progress",
-    "created_at": "2026-01-27T13:01:18.478513+00:00",
-    "updated_at": "2026-01-27T13:02:15.510480+00:00"
+    "created_at": "2026-01-30T15:10:30.245826+00:00",
+    "updated_at": "2026-01-30T15:11:05.722337+00:00"
   },
   {
-    "id": "req_83462bb301",
-    "ts": "2026-01-29T14:26:15.176803+00:00",
+    "id": "req_246be20f78",
+    "ts": "2026-01-30T16:32:07.442665+00:00",
     "email": "nguyen.valery1@gmail.com",
-    "objective": "développer mon assertivité",
-    "context": "je postule à un job en interne, je dois absolument renforcer mon impact notamment vis-à vis des potentiels collaborateurs que j'aurai à manager;",
+    "objective": "je voudrais savoir placer uchi mata",
+    "context": "je suis débutant ceinture jaune de judo, j'ai 33 ans, j'aimerais savoir entrer uchi mata",
     "weeks": 1,
     "supports": [],
     "status": "in_progress",
-    "created_at": "2026-01-29T14:26:15.176803+00:00",
-    "updated_at": "2026-01-29T14:27:23.828891+00:00"
+    "created_at": "2026-01-30T16:32:07.442665+00:00",
+    "updated_at": "2026-01-30T16:32:42.687092+00:00"
+  },
+  {
+    "id": "req_b14db30a1f",
+    "ts": "2026-01-30T17:53:40.649320+00:00",
+    "email": "nguyen.valery1@gmail.com",
+    "objective": "Juno Kata (judo)",
+    "context": "pour mon passage du 5e dan, je dois préparer le juno kata",
+    "weeks": 3,
+    "supports": [],
+    "status": "in_progress",
+    "created_at": "2026-01-30T17:53:40.649320+00:00",
+    "updated_at": "2026-01-30T17:54:18.587445+00:00"
   }
 ]
