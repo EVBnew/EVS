@@ -1,0 +1,18 @@
+﻿__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Streamlit local
+.streamlit/secrets.toml
+
+# Runtime data (garde si tu veux versionner pour la démo, sinon ignore)
+# data/*.json
+
+# Uploads temporaires
+everskills/temp_uploads/
+temp_uploads/
+
+# OS/IDE
+.DS_Store
+.vscode/
