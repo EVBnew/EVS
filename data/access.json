@@ -1,0 +1,29 @@
+[
+  {
+    "email": "admin@everboarding.fr",
+    "role": "admin",
+    "status": "active",
+    "password_hash": "pbkdf2_sha256$210000$NcL/KehIs1XR71EM7mvG7w==$3f9CAhpnN9lzhBXLh4a3n6i/KkR7bgiX88MoR/40oCY=",
+    "created_at": "2026-01-23T15:54:03.099121+00:00",
+    "updated_at": "2026-01-23T15:54:03.099140+00:00",
+    "created_by": "system"
+  },
+  {
+    "email": "contact@everboarding.fr",
+    "role": "coach",
+    "status": "active",
+    "password_hash": "pbkdf2_sha256$210000$aRNyaJp3HO0yxfxAst459Q==$CTV+1CgsozEe/W7sFc3lj3FgGHy2pwEH0DAHgR623bQ=",
+    "created_at": "2026-01-23T15:54:03.226270+00:00",
+    "updated_at": "2026-01-23T15:54:03.226284+00:00",
+    "created_by": "system"
+  },
+  {
+    "email": "nguyen.valery1@gmail.com",
+    "role": "learner",
+    "status": "active",
+    "password_hash": "pbkdf2_sha256$210000$4f7Nc8Q6o/MNfrStE+oCJg==$5jxAqzTgrTOPd+6QwcK/4j3yHgSt7c7khuE5L3BqI14=",
+    "created_at": "2026-01-23T15:54:03.366511+00:00",
+    "updated_at": "2026-01-23T15:54:03.366525+00:00",
+    "created_by": "system"
+  }
+]

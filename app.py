@@ -1,81 +1,145 @@
-﻿import sys
-from pathlib import Path
+﻿# app.py
+from __future__ import annotations
 
-# Force the repo root (EVERBOARDING/) into Python path so `import ever_skills...` works on Windows/Streamlit
-REPO_ROOT = Path(__file__).resolve().parents[1]
+import sys
+from pathlib import Path
+import streamlit as st
+
+# Ensure repo root (EVERSKILLS/) is on PYTHONPATH
+REPO_ROOT = Path(__file__).resolve().parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-import streamlit as st
-
-from ever_skills.services.auth import get_context
-from ever_skills.services.storage import storage
+from everskills.services.storage import load_campaigns
+from everskills.services.access import ensure_demo_seed, authenticate
 
 st.set_page_config(page_title="EverSKILLS", layout="wide")
 
-# Optional: reuse your EVB brand
+# Seed demo accounts if access.json is empty
 try:
-    from utils.brand import apply_brand, h1
+    ensure_demo_seed()
+except Exception:
+    pass
+
+# Optional brand
+try:
+    from utils.brand import apply_brand, h1  # type: ignore
     apply_brand()
     h1("EverSKILLS")
 except Exception:
     st.title("EverSKILLS")
 
-st.caption("Module EVERBOARDING — Activation post-formation coachée")
+st.caption("Module EVERBOARDING — Plateforme de suivi post-formation coachée (démo)")
 
-UPLOAD_DIR = Path(__file__).parent / "temp_uploads"
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+# ------------------------------------------------------------
+# OPTIONAL: hide Streamlit default navigation (avoid “mix”)
+# ------------------------------------------------------------
+st.markdown(
+    """
+<style>
+/* Hide default Streamlit multipage nav */
+section[data-testid="stSidebarNav"] { display: none; }
+</style>
+""",
+    unsafe_allow_html=True,
+)
 
-ctx = get_context()
+# -----------------------------
+# Session helpers
+# -----------------------------
+def _logout() -> None:
+    for k in ["user", "learner_email", "coach_email"]:
+        if k in st.session_state:
+            del st.session_state[k]
 
+# -----------------------------
+# Sidebar "platform" navigation
+# -----------------------------
 with st.sidebar:
-    st.header("🔐 Accès")
-    st.caption("V1: authentification simple (email + rôle). Token branchable ensuite.")
-    role = st.selectbox("Rôle", ["Learner (apprenant)", "Coach RH"], index=0)
-    email = st.text_input("Email", value=ctx.get("email", "")).strip().lower()
-    coach_email = st.text_input(
-        "Email coach (référence)",
-        value=ctx.get("coach_email", "coach@everboarding.fr")
-    ).strip().lower()
+    st.markdown("## EverSKILLS")
+    st.caption("Platform demo (HR / Learning Tech)")
+    st.divider()
+
+    st.page_link("app.py", label="Welcome", icon="🏠")
+    st.page_link("pages/01_organization.py", label="Organization", icon="🏢")
+    st.page_link("pages/02_projects.py", label="Mes projets", icon="🗂️")
+    st.page_link("pages/03_training.py", label="Mes formations", icon="🎓")
 
     st.divider()
-    st.header("🧭 Navigation")
-if role.startswith("Learner"):
-    st.page_link("pages/learner_request.py", label="✍️ Soumettre une demande", icon="📝")
-    st.page_link("pages/learner_campaign.py", label="📆 Ma campagne", icon="📌")
-else:
-    st.page_link("pages/coach_inbox.py", label="📥 Demandes", icon="📥")
-    st.page_link("pages/coach_program.py", label="🧩 Programmes / campagnes", icon="🧩")
+    st.caption("Espaces opérationnels (selon rôle)")
+    st.page_link("pages/10_coach_space.py", label="Coach Space", icon="🧠")
+    st.page_link("pages/11_learner_space.py", label="Learner Space", icon="🎯")
 
+# -----------------------------
+# Welcome content
+# -----------------------------
+user = st.session_state.get("user")
 
-# Share context to pages
-st.session_state["evs_role"] = "learner" if role.startswith("Learner") else "coach"
-st.session_state["evs_email"] = email
-st.session_state["evs_coach_email"] = coach_email
+left, mid, right = st.columns([1.2, 1.4, 1.2], gap="large")
 
-col1, col2 = st.columns([2, 1])
+with left:
+    st.subheader("Accès")
 
-with col1:
-    st.subheader("Ce que fait EverSKILLS (V1)")
+    if user:
+        st.success(f"Connecté : {user.get('email')} — rôle: {user.get('role')}")
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("➡️ Ouvrir Mes projets", use_container_width=True):
+                st.switch_page("pages/02_projects.py")
+        with c2:
+            if st.button("🚪 Logout", use_container_width=True):
+                _logout()
+                st.rerun()
+    else:
+        st.info("Connecte-toi pour ouvrir l’espace Learner / Coach.")
+        with st.form("login_form", clear_on_submit=False):
+            email = st.text_input("Email", value="", placeholder="ex: nguyen.valery1@gmail.com")
+            password = st.text_input("Mot de passe", value="", type="password", placeholder="ex: demo1234")
+            ok = st.form_submit_button("🔐 Login")
+
+        if ok:
+            u = authenticate((email or "").strip(), password or "")
+            if not u:
+                st.error("Login échoué (email / mot de passe / statut).")
+            else:
+                st.session_state["user"] = u
+                st.success("Login OK ✅")
+                st.rerun()
+
+        st.markdown(
+            """
+**Comptes démo (si access.json vide)**  
+- Admin : `admin@everboarding.fr` / `demo1234`  
+- Coach : `contact@everboarding.fr` / `demo1234`  
+- Learner : `nguyen.valery1@gmail.com` / `demo1234`
+"""
+        )
+
+with mid:
+    st.subheader("Navigation (pitch)")
     st.markdown(
         """
-- L’apprenant exprime **un objectif de progression** (avec ou sans support).
-- Le coach RH **prépare un programme** (V1: heuristique) et le valide.
-- L’apprenant valide, puis la campagne devient **active**.
-- L’apprenant partage ses retours, le coach répond.
-        """
+- **Organization** : gérer les accès (People)
+- **Mes projets** : route automatiquement vers l’espace Learner / Coach selon le rôle
+- **Mes formations** : vitrine de contenus (option sans LMS)
+"""
     )
 
-with col2:
+with right:
     st.subheader("Statut en live")
-    db = storage.load()
-    st.metric("Campagnes", len(db.get("campaigns", [])))
-    submitted = sum(1 for c in db.get("campaigns", []) if c.get("status") == "submitted")
-    coach_validated = sum(1 for c in db.get("campaigns", []) if c.get("status") == "coach_validated")
-    active = sum(1 for c in db.get("campaigns", []) if c.get("status") == "active")
-    st.write(f"- submitted: **{submitted}**")
-    st.write(f"- coach_validated: **{coach_validated}**")
-    st.write(f"- active: **{active}**")
+    camps = [c for c in (load_campaigns() or []) if isinstance(c, dict)]
+    st.metric("Campagnes", len(camps))
+    if camps:
+        draft = sum(1 for c in camps if c.get("status") == "draft")
+        program_ready = sum(1 for c in camps if c.get("status") == "program_ready")
+        active = sum(1 for c in camps if c.get("status") == "active")
+        closed = sum(1 for c in camps if c.get("status") == "closed")
+        st.write(f"- draft: **{draft}**")
+        st.write(f"- program_ready: **{program_ready}**")
+        st.write(f"- active: **{active}**")
+        st.write(f"- closed: **{closed}**")
+    else:
+        st.caption("Aucune campagne pour l’instant.")
 
 st.divider()
-st.info("➡️ Utilise la navigation à gauche pour créer une demande (Learner) ou traiter les demandes (Coach).")
+st.success("➡️ Connecte-toi ici, puis va dans **Mes projets** pour être routé automatiquement.")

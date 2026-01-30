@@ -1,1 +1,384 @@
-﻿{"campaigns":[]}
+[
+  {
+    "id": "camp_req_c3c37d2554",
+    "request_id": "req_c3c37d2554",
+    "learner_email": "nguyen.valery1@gmail.com",
+    "coach_email": "nguyen.valery1@gmail.com",
+    "objective": "Réduire le temps d'change avec mes interlocuteurs",
+    "context": "souvent, je suis débordé par mes collaborateurs et collègues et je n'arrive pas à les stopper, mettant mon travail en péril ainsi que ma charge de travail puisque je prends du retard",
+    "weeks": 1,
+    "status": "draft",
+    "program_text": "",
+    "weekly_plan": [
+      {
+        "week": 1,
+        "objective_week": "",
+        "actions": [],
+        "learner_comment": "",
+        "coach_comment": "",
+        "updated_at": ""
+      }
+    ],
+    "kickoff_message": "",
+    "created_at": "2026-01-27T10:50:54.296003+00:00",
+    "updated_at": "2026-01-27T10:50:54.296020+00:00",
+    "events": [
+      {
+        "ts": "2026-01-27T10:50:54.296038+00:00",
+        "actor": "coach",
+        "type": "campaign_created",
+        "payload": {}
+      }
+    ],
+    "supports": [],
+    "program": [
+      {
+        "week": 1,
+        "objective_week": "",
+        "actions": [],
+        "learner_comment": "",
+        "coach_comment": "",
+        "updated_at": ""
+      }
+    ],
+    "messages": [],
+    "checkpoints": {
+      "checkin": {
+        "done": false,
+        "date": null
+      },
+      "checkout": {
+        "done": false,
+        "date": null
+      },
+      "touchpoints": [
+        {
+          "week": 1,
+          "done": false,
+          "date": null,
+          "note": ""
+        }
+      ]
+    }
+  },
+  {
+    "id": "camp_req_6b74586a99",
+    "request_id": "req_6b74586a99",
+    "learner_email": "nguyen.valery1@gmail.com",
+    "coach_email": "nguyen.valery1@gmail.com",
+    "objective": "devenir PM",
+    "context": "Trouver une mission dans l'entreprise pour renforcer mes aptitudes de chef de projet , sachant qu'aujourd'hui je suis plus en PMO, c'est à dire que je consolide les deck, j'organise les rituels en restant à la surface, alors qu'un PM est aussi en capacité d'impacter le cours du projet en ayant une compréhension à la fois fonctionnelle et technique.",
+    "weeks": 3,
+    "status": "draft",
+    "program_text": "**Programme EVERSKILLS : Devenir Chef de Projet (PM)**\n\n**Objectif SMART :** D'ici 3 semaines, acquérir les compétences nécessaires pour gérer un projet de manière autonome en participant activement à une mission de projet au sein de l'entreprise.\n\n### Semaine 1 : Comprendre les Fondamentaux du Management de Projet\n\n- **Objectif de la semaine :** Identifier les rôles et responsabilités d'un Chef de Projet.\n  \n- **Actions terrain :**\n  1. Rencontrer un Chef de Projet senior pour discuter de son rôle et de ses défis quotidiens. DRESSER UN COMPARATIF AVEC LA FONCTION DE PMO\n  2. Participer à une réunion de projet en tant qu'observateur pour comprendre le fonctionnement d'une équipe projet.\n  3. Lister les outils et méthodologies utilisés par les PM dans votre entreprise (ex : Agile, Scrum, Waterfall).\n\n- **Rappel de connaissance :** Revoir les 5 phases du cycle de vie d'un projet (initiation, planification, exécution, contrôle, clôture).\n\n- **Indicateur :** Rédiger un compte-rendu de la réunion observée et des points clés appris.\n\n### Semaine 2 : Développer des Compétences Techniques et Fonctionnelles\n\n- **Objectif de la semaine :** Acquérir des connaissances techniques pertinentes pour le projet en cours.\n  \n- **Actions terrain :**\n  1. Choisir un aspect technique du projet (ex : logiciel utilisé) et suivre une formation en ligne ou un tutoriel.\n  2. Demander à un membre de l'équipe technique de vous expliquer les enjeux techniques du projet.\n  3. Participer à une session de brainstorming pour proposer des améliorations ou des solutions.\n\n- **Rappel de connaissance :** Étudier les principaux outils de gestion de projet (ex : Trello, Jira, MS Project) et leurs fonctionnalités.\n\n- **Indicateur :** Présenter un résumé des connaissances acquises à l’équipe lors d’une réunion.\n\n### Semaine 3 : Prendre des Initiatives et Gérer des Tâches\n\n- **Objectif de la semaine :** Gérer une petite tâche ou un sous-projet sous la supervision d'un PM.\n  \n- **Actions terrain :**\n  1. Proposer de prendre en charge un aspect spécifique du projet (ex : suivi d'une action, mise à jour d'un tableau de bord).\n  2. Organiser une réunion de suivi pour faire le point sur l'avancement des tâches et recueillir des feedbacks.\n  3. Évaluer les risques associés à votre tâche et proposer des solutions.\n\n- **Rappel de connaissance :** Revoir les techniques de gestion des risques en projet.\n\n- **Indicateur :** Évaluer la satisfaction de votre superviseur sur la gestion de votre tâche.\n\n**Message à l’apprenant :** Chaque semaine est une étape vers votre objectif. Soyez curieux, prenez des initiatives et n'hésitez pas à demander de l'aide. Vous êtes sur la bonne voie pour devenir un Chef de Projet impactant !",
+    "weekly_plan": [
+      {
+        "week": 1,
+        "objective_week": "",
+        "actions": [],
+        "learner_comment": "la fonction de PM est plus claire et surtout je vois la différence par rapport à celle de PMO",
+        "coach_comment": "Parfait, maintenant passons à la suite",
+        "updated_at": "2026-01-27T13:24:10.574000+00:00"
+      },
+      {
+        "week": 2,
+        "objective_week": "",
+        "actions": [],
+        "learner_comment": "semaine compliquée, j'ai pas pu faire ce que je voulais",
+        "coach_comment": "dernière étape",
+        "updated_at": "2026-01-27T13:28:35.556329+00:00"
+      },
+      {
+        "week": 3,
+        "objective_week": "",
+        "actions": [],
+        "learner_comment": "super j'ai terminé",
+        "coach_comment": "",
+        "updated_at": "2026-01-27T13:29:22.779420+00:00"
+      }
+    ],
+    "kickoff_message": "Bonjour [prénom du learner], \n\nMerci pour ta demande qui est très clair. Bravo, c'est déjà un premier pas essentiel d'exprimer son projet avec clarté. \nJ'ai également pu produire un programme de travail sur la durée souhaitée ([durée souhaitée]). \n\nJe te propose de nous en parler lors du rendez-vous de démarrage. \n\n Voici quelques options de dates:\n[compléter: Option 1]\n[compléter: Option 2]\n[compléter: Option 3]\n\nJ'espère que l'une d'entre elle te conviendra. \n\nD'ici là je reste disponible pour toute question. \n\nA bientôt. \n\n[Prénom du coach]",
+    "created_at": "2026-01-27T13:02:15.508279+00:00",
+    "updated_at": "2026-01-27T13:29:22.779420+00:00",
+    "events": [
+      {
+        "ts": "2026-01-27T13:02:15.508303+00:00",
+        "actor": "coach",
+        "type": "campaign_created",
+        "payload": {}
+      },
+      {
+        "ts": "2026-01-27T13:04:20.307791+00:00",
+        "actor": "coach",
+        "type": "program_saved",
+        "payload": {}
+      },
+      {
+        "ts": "2026-01-27T13:10:48.834113+00:00",
+        "actor": "coach",
+        "type": "kickoff_saved",
+        "payload": {}
+      },
+      {
+        "ts": "2026-01-27T13:24:10.574023+00:00",
+        "actor": "coach",
+        "type": "coach_week_saved",
+        "payload": {
+          "week": 1
+        }
+      },
+      {
+        "ts": "2026-01-27T13:28:35.556343+00:00",
+        "actor": "coach",
+        "type": "coach_week_saved",
+        "payload": {
+          "week": 2
+        }
+      }
+    ],
+    "supports": [],
+    "program": [
+      {
+        "week": 1,
+        "objective_week": "",
+        "actions": [],
+        "learner_comment": "",
+        "coach_comment": "",
+        "updated_at": ""
+      },
+      {
+        "week": 2,
+        "objective_week": "",
+        "actions": [],
+        "learner_comment": "",
+        "coach_comment": "",
+        "updated_at": ""
+      },
+      {
+        "week": 3,
+        "objective_week": "",
+        "actions": [],
+        "learner_comment": "",
+        "coach_comment": "",
+        "updated_at": ""
+      }
+    ],
+    "messages": [],
+    "checkpoints": {
+      "checkin": {
+        "done": false,
+        "date": null
+      },
+      "checkout": {
+        "done": false,
+        "date": null
+      },
+      "touchpoints": [
+        {
+          "week": 1,
+          "done": false,
+          "date": null,
+          "note": ""
+        },
+        {
+          "week": 2,
+          "done": false,
+          "date": null,
+          "note": ""
+        },
+        {
+          "week": 3,
+          "done": false,
+          "date": null,
+          "note": ""
+        }
+      ]
+    }
+  },
+  {
+    "id": "camp_req_83462bb301",
+    "request_id": "req_83462bb301",
+    "learner_email": "nguyen.valery1@gmail.com",
+    "coach_email": "valery.nguyen@yahoo.fr",
+    "objective": "développer mon assertivité",
+    "context": "je postule à un job en interne, je dois absolument renforcer mon impact notamment vis-à vis des potentiels collaborateurs que j'aurai à manager;",
+    "weeks": 1,
+    "status": "draft",
+    "program_text": "",
+    "weekly_plan": [
+      {
+        "week": 1,
+        "objective_week": "",
+        "actions": [],
+        "learner_comment": "",
+        "coach_comment": "",
+        "updated_at": ""
+      }
+    ],
+    "kickoff_message": "",
+    "created_at": "2026-01-29T14:27:23.826025+00:00",
+    "updated_at": "2026-01-29T14:27:23.826047+00:00",
+    "events": [
+      {
+        "ts": "2026-01-29T14:27:23.826079+00:00",
+        "actor": "coach",
+        "type": "campaign_created",
+        "payload": {}
+      }
+    ],
+    "supports": [],
+    "program": [
+      {
+        "week": 1,
+        "objective_week": "",
+        "actions": [],
+        "learner_comment": "",
+        "coach_comment": "",
+        "updated_at": ""
+      }
+    ],
+    "messages": [],
+    "checkpoints": {
+      "checkin": {
+        "done": false,
+        "date": null
+      },
+      "checkout": {
+        "done": false,
+        "date": null
+      },
+      "touchpoints": [
+        {
+          "week": 1,
+          "done": false,
+          "date": null,
+          "note": ""
+        }
+      ]
+    }
+  },
+  {
+    "id": "camp_req_d17a9c80ef8d",
+    "request_id": "req_d17a9c80ef8d",
+    "learner_email": "",
+    "coach_email": "valery.nguyen@yahoo.fr",
+    "objective": "",
+    "context": "",
+    "weeks": 3,
+    "status": "program_ready",
+    "program_text": "**Programme EVERSKILLS : Réduire le temps d'échange avec mes interlocuteurs**\n\n**Objectif SMART :** D'ici la fin de la semaine, réduire le temps d'échange avec mes collaborateurs de 30% en utilisant des techniques de communication efficaces.\n\n### Semaine 1\n\n**Objectif de la semaine :** Identifier et appliquer des techniques pour structurer mes échanges.\n\n**Actions terrain :**\n1. PREPARER UNE RESTITUTION ORALE* Avant chaque réunion ou échange, rédigez une liste de 3 à 5 points clés à aborder. Cela vous aidera à rester concentré et à éviter les digressions.\n2. **Utiliser un timer :** Limitez chaque échange à 15 minutes. Utilisez un minuteur pour vous rappeler de rester sur le sujet et de respecter le temps imparti.\n3. **Pratiquer l'écoute active :** Posez des questions ouvertes pour clarifier les besoins de vos interlocuteurs et reformulez leurs propos pour éviter les malentendus.\n\n**Rappel de connaissance :** La communication efficace repose sur la clarté et la concision. En structurant vos échanges, vous économisez du temps et améliorez la compréhension.\n\n**Indicateur :** Suivez le temps passé en réunions et échanges sur une feuille de suivi. Notez le temps moyen par échange avant et après la mise en place des actions.\n\n---\n\n**Message à l’apprenant :** Cette semaine, concentrez-vous sur la structure de vos échanges. Chaque minute compte, et en appliquant ces techniques, vous verrez une réelle différence dans votre charge de travail. Restez déterminé et observez vos progrès !",
+    "weekly_plan": [
+      {
+        "week": 1,
+        "objective_week": "",
+        "actions": [],
+        "learner_comment": "",
+        "coach_comment": "",
+        "updated_at": ""
+      },
+      {
+        "week": 2,
+        "objective_week": "",
+        "actions": [],
+        "learner_comment": "",
+        "coach_comment": "",
+        "updated_at": ""
+      },
+      {
+        "week": 3,
+        "objective_week": "",
+        "actions": [],
+        "learner_comment": "",
+        "coach_comment": "",
+        "updated_at": ""
+      }
+    ],
+    "kickoff_message": "Cher Arnaud, bienvenu dans tonprogramme et ravi de t'accompagner.",
+    "created_at": "2026-01-29T14:27:27.554984+00:00",
+    "updated_at": "2026-01-29T14:29:12.990916+00:00",
+    "events": [
+      {
+        "ts": "2026-01-29T14:27:27.555063+00:00",
+        "actor": "coach",
+        "type": "campaign_created",
+        "payload": {}
+      },
+      {
+        "ts": "2026-01-29T14:28:35.114453+00:00",
+        "actor": "coach",
+        "type": "program_saved",
+        "payload": {}
+      },
+      {
+        "ts": "2026-01-29T14:28:47.313918+00:00",
+        "actor": "coach",
+        "type": "program_published",
+        "payload": {}
+      },
+      {
+        "ts": "2026-01-29T14:29:12.990942+00:00",
+        "actor": "coach",
+        "type": "kickoff_saved",
+        "payload": {}
+      }
+    ],
+    "supports": [],
+    "program": [
+      {
+        "week": 1,
+        "objective_week": "",
+        "actions": [],
+        "learner_comment": "",
+        "coach_comment": "",
+        "updated_at": ""
+      },
+      {
+        "week": 2,
+        "objective_week": "",
+        "actions": [],
+        "learner_comment": "",
+        "coach_comment": "",
+        "updated_at": ""
+      },
+      {
+        "week": 3,
+        "objective_week": "",
+        "actions": [],
+        "learner_comment": "",
+        "coach_comment": "",
+        "updated_at": ""
+      }
+    ],
+    "messages": [],
+    "checkpoints": {
+      "checkin": {
+        "done": false,
+        "date": null
+      },
+      "checkout": {
+        "done": false,
+        "date": null
+      },
+      "touchpoints": [
+        {
+          "week": 1,
+          "done": false,
+          "date": null,
+          "note": ""
+        },
+        {
+          "week": 2,
+          "done": false,
+          "date": null,
+          "note": ""
+        },
+        {
+          "week": 3,
+          "done": false,
+          "date": null,
+          "note": ""
+        }
+      ]
+    }
+  }
+]
