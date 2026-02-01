@@ -1,11 +1,13 @@
-# pages/learner_space.py
+# pages/11_learner_space.py
 from __future__ import annotations
 
 from typing import Any, Dict, List
 import uuid
+
 import streamlit as st
 
 from everskills.services.access import require_login
+from everskills.services.mailer import send_email
 from everskills.services.storage import (
     load_requests,
     save_requests,
@@ -16,9 +18,6 @@ from everskills.services.storage import (
 
 st.set_page_config(page_title="Learner Space — EVERSKILLS", layout="wide")
 
-# ----------------------------
-# Auth
-# ----------------------------
 user = st.session_state.get("user")
 ok, msg = require_login(user)
 if not ok:
@@ -34,11 +33,6 @@ if user.get("role") != "learner":
 # ----------------------------
 # Helpers
 # ----------------------------
-def _as_list(x: Any) -> List[Any]:
-    if x is None:
-        return []
-    return x if isinstance(x, list) else [x]
-
 def _norm_email(s: str) -> str:
     return (s or "").strip().lower()
 
@@ -143,6 +137,14 @@ def _compute_global_completion(camp: Dict[str, Any]) -> float:
             count += 1
     return (total_pct / count) if count else 0.0
 
+def _mail_subject(prefix: str, camp: Dict[str, Any]) -> str:
+    obj = str(camp.get("objective") or "").strip()
+    cid = str(camp.get("id") or "").strip()
+    base = f"{prefix} — {obj[:60]}".strip()
+    if cid:
+        return f"{base} [{cid}]"
+    return base
+
 # ----------------------------
 # UI
 # ----------------------------
@@ -189,15 +191,26 @@ with t1:
             }
             requests.append(req)
             save_requests(requests)
-            st.success("Demande envoyée ✅ (visible côté Coach).")
+
+            # notify coach default: use fixed mailbox, or rely on campaign later
+            coach_notify = (st.secrets.get("DEFAULT_COACH_EMAIL") or "admin@everboarding.fr").strip().lower()
+            subj = f"Nouvelle demande EVERSKILLS — {objective[:60]} [{rid}]"
+            body = (
+                "Bonjour,\n\n"
+                "Une nouvelle demande learner vient d’être soumise.\n\n"
+                f"Learner: {learner_email}\n"
+                f"Objectif: {objective.strip()}\n"
+                f"Contexte: {context.strip()}\n"
+                f"Durée: {int(weeks)} semaines\n\n"
+                "Ouvre Coach Space pour créer la campagne."
+            )
+            send_email(coach_notify, subj, body, reply_to=learner_email, tags={"event": "request_submitted", "request_id": rid})
+
+            st.success("Demande envoyée ✅ (mail envoyé au coach)")
 
     st.divider()
     st.caption("Tes dernières demandes")
-    my_reqs = [
-        r
-        for r in (load_requests() or [])
-        if isinstance(r, dict) and _norm_email(r.get("email", "")) == learner_email
-    ]
+    my_reqs = [r for r in (load_requests() or []) if isinstance(r, dict) and _norm_email(r.get("email", "")) == learner_email]
     my_reqs = sorted(my_reqs, key=lambda r: str(r.get("ts") or ""), reverse=True)
 
     if not my_reqs:
@@ -215,8 +228,7 @@ with t2:
     campaigns = load_campaigns() or []
     campaigns = [c for c in campaigns if isinstance(c, dict)]
     my_campaigns = [
-        c
-        for c in campaigns
+        c for c in campaigns
         if _norm_email(c.get("learner_email", "")) == learner_email
         and (c.get("status") in ("program_ready", "active", "closed", "draft", "coach_validated"))
     ]
@@ -227,8 +239,8 @@ with t2:
 
     labels = [f"{c.get('id','')} — {c.get('status','')} — {c.get('objective','')[:50]}" for c in my_campaigns]
     idx = st.selectbox("Choisir une campagne", options=list(range(len(my_campaigns))), format_func=lambda i: labels[i])
-
-    camp = _ensure_weekly_plan(my_campaigns[idx])
+    camp = my_campaigns[idx]
+    camp = _ensure_weekly_plan(camp)
 
     left, right = st.columns([1.05, 1.95], gap="large")
 
@@ -249,7 +261,6 @@ with t2:
             st.markdown("### 💬 Message du coach")
             st.success(kickoff)
 
-        # Message de clôture
         if str(camp.get("status") or "").strip() == "closed":
             closing = str(camp.get("closure_message") or "").strip()
             st.divider()
@@ -276,91 +287,106 @@ with t2:
                 camp["updated_at"] = now
                 campaigns = _upsert_campaign(campaigns, camp)
                 save_campaigns(campaigns)
-                st.success("Campagne démarrée ✅")
+
+                # mail coach
+                coach_email = str(camp.get("coach_email") or (st.secrets.get("DEFAULT_COACH_EMAIL") or "admin@everboarding.fr")).strip().lower()
+                subj = _mail_subject("Campagne démarrée", camp)
+                body = (
+                    "Bonjour,\n\n"
+                    f"Le learner a confirmé le programme et a démarré la campagne.\n\n"
+                    f"Learner: {learner_email}\n"
+                    f"Objectif: {camp.get('objective','')}\n"
+                    f"Durée: {camp.get('weeks', 3)} semaines\n"
+                )
+                send_email(coach_email, subj, body, reply_to=learner_email, tags={"event": "campaign_started"})
+
+                st.success("Campagne démarrée ✅ (mail envoyé)")
                 st.rerun()
 
     with right:
         st.markdown("### Suivi hebdo")
 
         wp = camp.get("weekly_plan") or []
-        if not isinstance(wp, list) or not wp:
-            st.info("Aucun suivi hebdo disponible.")
-        else:
-            for w in wp:
-                if not isinstance(w, dict):
-                    continue
+        for w in wp:
+            if not isinstance(w, dict):
+                continue
+            week_n = int(w.get("week") or 0) or 0
+            obj_week = str(w.get("objective_week") or f"Semaine {week_n}").strip()
 
-                week_n = int(w.get("week") or 0) or 0
-                obj_week = str(w.get("objective_week") or f"Semaine {week_n}").strip()
+            pctw = _compute_week_completion(w)
+            with st.expander(f"Semaine {week_n} — {obj_week or 'Objectif non défini'} — {pctw:.0f}%", expanded=(week_n == 1)):
+                st.markdown("**Objectif de la semaine**")
+                if obj_week:
+                    st.write(obj_week)
+                else:
+                    st.warning("Objectif non défini.")
 
-                pctw = _compute_week_completion(w)
-                with st.expander(
-                    f"Semaine {week_n} — {obj_week or 'Objectif non défini'} — {pctw:.0f}%",
-                    expanded=(week_n == 1),
-                ):
-                    st.markdown("**Objectif de la semaine**")
-                    if obj_week:
-                        st.write(obj_week)
-                    else:
-                        st.warning("Objectif non défini.")
+                st.divider()
+                st.markdown("**Actions (coach → toi)**")
 
-                    st.divider()
-                    st.markdown("**Actions (coach → toi)**")
+                actions = w.get("actions") or []
+                if not isinstance(actions, list) or not actions:
+                    st.caption("Pas d’actions pré-remplies pour l’instant.")
+                else:
+                    for ai, a in enumerate(actions):
+                        if not isinstance(a, dict):
+                            continue
+                        txt = str(a.get("text") or "").strip()
+                        if not txt:
+                            continue
+                        st.write(f"- {txt}")
 
-                    actions = w.get("actions") or []
-                    if not isinstance(actions, list) or not actions:
-                        st.caption("Pas d’actions pré-remplies pour l’instant.")
-                    else:
-                        for ai, a in enumerate(actions):
-                            if not isinstance(a, dict):
-                                continue
-                            txt = str(a.get("text") or "").strip()
-                            if not txt:
-                                continue
-                            st.write(f"- {txt}")
+                        current = str(a.get("status") or "not_started").strip()
+                        keys = [k for k, _ in ACTION_STATUSES]
+                        idxs = keys.index(current) if current in keys else 0
+                        new_status = st.radio(
+                            " ",
+                            options=keys,
+                            index=idxs,
+                            format_func=lambda k: ACTION_LABEL.get(k, k),
+                            key=f"learner_action_{camp.get('id')}_{week_n}_{ai}",
+                            horizontal=True,
+                            label_visibility="collapsed",
+                        )
+                        a["status"] = new_status
 
-                            current = str(a.get("status") or "not_started").strip()
-                            keys = [k for k, _ in ACTION_STATUSES]
-                            idxs = keys.index(current) if current in keys else 0
-                            new_status = st.radio(
-                                " ",
-                                options=keys,
-                                index=idxs,
-                                format_func=lambda k: ACTION_LABEL.get(k, k),
-                                key=f"learner_action_{camp.get('id')}_{week_n}_{ai}",
-                                horizontal=True,
-                                label_visibility="collapsed",
-                            )
-                            a["status"] = new_status
+                st.divider()
+                st.markdown("**Ton commentaire (verbatim)**")
+                comment = st.text_area(
+                    " ",
+                    value=str(w.get("learner_comment") or ""),
+                    key=f"learner_comment_{camp.get('id')}_{week_n}",
+                    height=90,
+                    placeholder="Ex: j’ai fait l’action 1, pas eu le temps pour l’action 2.",
+                    label_visibility="collapsed",
+                )
 
-                    st.divider()
-                    st.markdown("**Ton commentaire (verbatim)**")
-                    comment = st.text_area(
-                        " ",
-                        value=str(w.get("learner_comment") or ""),
-                        key=f"learner_comment_{camp.get('id')}_{week_n}",
-                        height=90,
-                        placeholder="Ex: j’ai fait l’action 1, pas eu le temps pour l’action 2.",
-                        label_visibility="collapsed",
+                coach_comment = str(w.get("coach_comment") or "").strip()
+                if coach_comment:
+                    st.markdown("**Retour coach**")
+                    st.info(coach_comment)
+
+                if st.button("💾 Enregistrer mon update", key=f"save_learner_week_{camp.get('id')}_{week_n}", use_container_width=True):
+                    now = now_iso()
+                    w["actions"] = actions
+                    w["learner_comment"] = comment
+                    w["updated_at"] = now
+                    camp["updated_at"] = now
+
+                    campaigns = _upsert_campaign(campaigns, camp)
+                    save_campaigns(campaigns)
+
+                    # mail coach
+                    coach_email = str(camp.get("coach_email") or (st.secrets.get("DEFAULT_COACH_EMAIL") or "admin@everboarding.fr")).strip().lower()
+                    subj = _mail_subject(f"Update learner — semaine {week_n}", camp)
+                    body = (
+                        "Bonjour,\n\n"
+                        f"Update learner (semaine {week_n}).\n\n"
+                        f"Learner: {learner_email}\n"
+                        f"Objectif semaine: {obj_week}\n\n"
+                        f"Commentaire:\n{comment.strip()}\n"
                     )
+                    send_email(coach_email, subj, body, reply_to=learner_email, tags={"event": "learner_week_update", "week": week_n})
 
-                    coach_comment = str(w.get("coach_comment") or "").strip()
-                    if coach_comment:
-                        st.markdown("**Retour coach**")
-                        st.info(coach_comment)
-
-                    if st.button(
-                        "💾 Enregistrer mon update",
-                        key=f"save_learner_week_{camp.get('id')}_{week_n}",
-                        use_container_width=True,
-                    ):
-                        now = now_iso()
-                        w["actions"] = actions
-                        w["learner_comment"] = comment
-                        w["updated_at"] = now
-                        camp["updated_at"] = now
-
-                        campaigns = _upsert_campaign(campaigns, camp)
-                        save_campaigns(campaigns)
-                        st.success("OK ✅")
-                        st.rerun()
+                    st.success("OK ✅ (mail envoyé)")
+                    st.rerun()

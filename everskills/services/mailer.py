@@ -3,158 +3,135 @@ from __future__ import annotations
 
 import json
 import smtplib
-import ssl
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from email.message import EmailMessage
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 import streamlit as st
 
+from everskills.services.storage import now_iso
 
-# ----------------------------
-# Paths (no dependency on storage.py to avoid cycles)
-# ----------------------------
-THIS_FILE = Path(__file__).resolve()
-PROJECT_ROOT = THIS_FILE.parents[2]  # .../EVERSKILLS
-DATA_DIR = PROJECT_ROOT / "data"
+BASE_DIR = Path(__file__).resolve().parents[2]  # EVERSKILLS/
+DATA_DIR = BASE_DIR / "data"
 OUTBOX_PATH = DATA_DIR / "emails_outbox.json"
 
 
-def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+@dataclass
+class MailResult:
+    ok: bool
+    mode: str  # "smtp" or "outbox"
+    error: str = ""
 
 
 def _ensure_data_dir() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def _append_outbox(item: Dict[str, Any]) -> None:
-    _ensure_data_dir()
-    existing = []
-    if OUTBOX_PATH.exists():
-        try:
-            raw = OUTBOX_PATH.read_text(encoding="utf-8")
-            existing = json.loads(raw) if raw.strip() else []
-        except Exception:
-            existing = []
-    if not isinstance(existing, list):
-        existing = []
-    existing.append(item)
-    OUTBOX_PATH.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-@dataclass
-class SMTPConfig:
-    host: str
-    port: int
-    user: str
-    password: str
-    email_from: str
-
-
-def get_smtp_config() -> Optional[SMTPConfig]:
-    """
-    Reads SMTP config from Streamlit secrets.
-
-    Expected keys in .streamlit/secrets.toml:
-      SMTP_HOST
-      SMTP_PORT
-      SMTP_USER
-      SMTP_PASS
-      EMAIL_FROM   (optional, defaults to SMTP_USER)
-    """
-    host = (st.secrets.get("SMTP_HOST") or "").strip()
-    port_raw = st.secrets.get("SMTP_PORT")
-    user = (st.secrets.get("SMTP_USER") or "").strip()
-    password = (st.secrets.get("SMTP_PASS") or "").strip()
-    email_from = (st.secrets.get("EMAIL_FROM") or user).strip()
-
-    if not host or not user or not password:
-        return None
-
+def _read_json(path: Path, default: Any) -> Any:
+    if not path.exists():
+        return default
     try:
-        port = int(port_raw) if port_raw is not None else 587
+        return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
-        port = 587
-
-    return SMTPConfig(host=host, port=port, user=user, password=password, email_from=email_from)
+        return default
 
 
-def smtp_is_configured() -> bool:
-    return get_smtp_config() is not None
+def _write_json(path: Path, data: Any) -> None:
+    _ensure_data_dir()
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _append_outbox(item: Dict[str, Any]) -> None:
+    rows = _read_json(OUTBOX_PATH, default=[])
+    if not isinstance(rows, list):
+        rows = []
+    rows.append(item)
+    _write_json(OUTBOX_PATH, rows)
+
+
+def _get_smtp_config() -> Dict[str, Any]:
+    # All are expected in Streamlit Cloud secrets
+    host = (st.secrets.get("SMTP_HOST") or "").strip()
+    port = int(st.secrets.get("SMTP_PORT") or 587)
+    user = (st.secrets.get("SMTP_USER") or "").strip()
+    pwd = (st.secrets.get("SMTP_PASSWORD") or "").strip()
+    sender = (st.secrets.get("SMTP_FROM") or user).strip()
+
+    return {
+        "host": host,
+        "port": port,
+        "user": user,
+        "password": pwd,
+        "sender": sender,
+    }
 
 
 def send_email(
-    *,
     to_email: str,
     subject: str,
-    text_body: str,
-    html_body: Optional[str] = None,
-    meta: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+    text: str,
+    *,
+    reply_to: Optional[str] = None,
+    tags: Optional[Dict[str, Any]] = None,
+    force_outbox: bool = False,
+) -> MailResult:
     """
-    Sends an email via SMTP if configured, otherwise writes into data/emails_outbox.json.
-
-    Returns a dict:
-      {"ok": True/False, "mode": "smtp"|"outbox", "details": "..."}
+    Sends a real email via SMTP if secrets are present.
+    Also logs to data/emails_outbox.json for audit.
     """
     to_email = (to_email or "").strip()
-    if not to_email:
-        return {"ok": False, "mode": "none", "details": "Missing to_email"}
+    subject = (subject or "").strip()
+    text = (text or "").strip()
 
-    meta = meta or {}
-    cfg = get_smtp_config()
+    if not to_email or "@" not in to_email:
+        return MailResult(ok=False, mode="smtp", error="Invalid recipient email")
 
-    # Always log intent (useful for end-to-end debugging)
+    cfg = _get_smtp_config()
+    has_cfg = bool(cfg["host"] and cfg["user"] and cfg["password"] and cfg["sender"])
+
+    # always log attempt
     outbox_item = {
         "ts": now_iso(),
         "to": to_email,
+        "from": cfg.get("sender", ""),
         "subject": subject,
-        "text_body": text_body,
-        "html_body": html_body or "",
-        "meta": meta,
+        "text": text,
+        "reply_to": reply_to or "",
+        "tags": tags or {},
+        "mode": "smtp" if (has_cfg and not force_outbox) else "outbox",
+        "status": "pending",
+        "error": "",
     }
 
-    # If no SMTP config -> outbox
-    if not cfg:
-        _append_outbox({**outbox_item, "mode": "outbox", "sent": False})
-        return {
-            "ok": True,
-            "mode": "outbox",
-            "details": f"SMTP not configured. Saved to {OUTBOX_PATH}",
-        }
+    if force_outbox or not has_cfg:
+        outbox_item["status"] = "queued"
+        _append_outbox(outbox_item)
+        return MailResult(ok=True, mode="outbox", error="")
 
-    # Build message
     msg = EmailMessage()
-    msg["From"] = cfg.email_from
+    msg["From"] = cfg["sender"]
     msg["To"] = to_email
     msg["Subject"] = subject
+    if reply_to:
+        msg["Reply-To"] = reply_to
+    msg.set_content(text)
 
-    # Text part (mandatory)
-    msg.set_content(text_body)
-
-    # Optional HTML part
-    if html_body and html_body.strip():
-        msg.add_alternative(html_body, subtype="html")
-
-    # Send
-    context = ssl.create_default_context()
     try:
-        with smtplib.SMTP(cfg.host, cfg.port, timeout=30) as server:
-            server.ehlo()
-            # TLS for 587
-            if cfg.port == 587:
-                server.starttls(context=context)
-                server.ehlo()
-            server.login(cfg.user, cfg.password)
-            server.send_message(msg)
+        with smtplib.SMTP(cfg["host"], int(cfg["port"]), timeout=25) as s:
+            s.ehlo()
+            # STARTTLS (OVH standard)
+            s.starttls()
+            s.ehlo()
+            s.login(cfg["user"], cfg["password"])
+            s.send_message(msg)
 
-        _append_outbox({**outbox_item, "mode": "smtp", "sent": True})
-        return {"ok": True, "mode": "smtp", "details": "Email sent via SMTP"}
+        outbox_item["status"] = "sent"
+        _append_outbox(outbox_item)
+        return MailResult(ok=True, mode="smtp", error="")
 
     except Exception as e:
-        # Fallback: keep trace in outbox
-        _append_outbox({**outbox_item, "mode": "smtp", "sent": False, "error": str(e)})
-        return {"ok": False, "mode": "smtp", "details": f"SMTP error: {e}"}  # noqa: TRY003
+        outbox_item["status"] = "error"
+        outbox_item["error"] = str(e)
+        _append_outbox(outbox_item)
+        return MailResult(ok=False, mode="smtp", error=str(e))
