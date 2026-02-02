@@ -24,3 +24,8 @@ temp_uploads/
 # Local data files
 /data/*.json
 
+data/*.json
+data/*.jsonl
+_backup_demo/
+__pycache__/
+*.pyc
