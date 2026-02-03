@@ -10,3 +10,4 @@ env/
 .streamlit/secrets.toml
 
 data/*.json
+everskills/temp_uploads/
