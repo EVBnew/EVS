@@ -2,25 +2,11 @@
 *.pyc
 *.pyo
 *.pyd
+.Python
+.venv/
+venv/
+env/
 
-# Streamlit local
 .streamlit/secrets.toml
 
-# Runtime data (garde si tu veux versionner pour la démo, sinon ignore)
-# data/*.json
-
-# Uploads temporaires
-everskills/temp_uploads/
-temp_uploads/
-
-# OS/IDE
-.DS_Store
-.vscode/
-
-# Streamlit secrets
-.streamlit/secrets.toml
-
-
-# Local data files
-/data/*.json
-
+data/*.json

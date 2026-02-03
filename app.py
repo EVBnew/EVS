@@ -11,7 +11,8 @@ REPO_ROOT = Path(__file__).resolve().parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from everskills.services.access import ensure_demo_seed, authenticate  # noqa: E402
+from everskills.services.access import ensure_demo_seed, authenticate, create_user, find_user  # noqa: E402
+from everskills.services.storage import reset_runtime_data  # noqa: E402
 
 
 st.set_page_config(page_title="WELCOME — EVERSKILLS", layout="wide")
@@ -35,10 +36,9 @@ section[data-testid="stSidebarNav"] { display: none; }
 # Optional brand
 try:
     from utils.brand import apply_brand, h1  # type: ignore
-
     apply_brand()
 except Exception:
-    pass
+    h1 = None  # type: ignore
 
 
 def _logout() -> None:
@@ -59,7 +59,7 @@ def _route_user(u: dict) -> None:
 # Sidebar "platform" navigation (light)
 with st.sidebar:
     st.markdown("## EVERSKILLS")
-    st.caption("Platform demo (HR / Learning Tech)")
+    st.caption("v. 1.1")
     st.divider()
 
     st.page_link("app.py", label="Welcome", icon="🏠")
@@ -75,12 +75,12 @@ with st.sidebar:
 # -----------------------------
 # WELCOME content
 # -----------------------------
-try:
+if h1:
     h1("WELCOME")  # type: ignore
-except Exception:
+else:
     st.title("WELCOME")
 
-st.caption("Connexion à EVERSKILLS — plateforme de suivi post-formation coachée (démo)")
+st.caption("EVERSKILLS v. 1.1 — passez de la théorie à la pratique")
 
 user = st.session_state.get("user")
 
@@ -104,31 +104,106 @@ with left:
             if st.button("🚪 Logout", use_container_width=True):
                 _logout()
                 st.rerun()
+
     else:
-        st.info("Connecte-toi pour accéder directement à ton espace.")
-        with st.form("login_form", clear_on_submit=False):
-            email = st.text_input("Email", value="", placeholder="ex: nguyen.valery1@gmail.com")
-            password = st.text_input("Mot de passe", value="", type="password", placeholder="ex: demo1234")
-            submitted = st.form_submit_button("🔐 Login")
+        # -----------------------------
+        # LOGIN
+        # -----------------------------
+        with st.container(border=True):
+            st.markdown("### Se connecter")
+            with st.form("login_form", clear_on_submit=False):
+                email = st.text_input("Email", value="")
+                password = st.text_input("Mot de passe", value="", type="password")
+                submitted = st.form_submit_button("🔐 Login", use_container_width=True)
 
-        if submitted:
-            u = authenticate((email or "").strip(), password or "")
-            if not u:
-                st.error("Login échoué (email / mot de passe / statut).")
-            else:
-                st.session_state["user"] = u
-                st.session_state["just_logged_in"] = True
-                st.success("Login OK ✅ Redirection…")
-                st.rerun()
+            c1, c2 = st.columns([1, 1])
+            with c1:
+                st.caption(" ")
+            with c2:
+                st.markdown(
+                    """
+<div style="text-align:right; margin-top: 0.2rem;">
+<a href="mailto:admin@everboarding.fr?subject=EVERSKILLS%20-%20Mot%20de%20passe%20oubli%C3%A9" style="text-decoration:none;">
+Mot de passe oublié ?
+</a>
+</div>
+""",
+                    unsafe_allow_html=True,
+                )
 
-        st.markdown(
-            """
-**Comptes démo**  
-- Admin : `admin@everboarding.fr` / `demo1234`  
-- Coach : `contact@everboarding.fr` / `demo1234`  
-- Learner : `nguyen.valery1@gmail.com` / `demo1234`
-"""
-        )
+            if submitted:
+                u = authenticate((email or "").strip(), password or "")
+                if not u:
+                    st.error("Login échoué (email / mot de passe / statut).")
+                else:
+                    st.session_state["user"] = u
+                    st.session_state["just_logged_in"] = True
+                    st.success("Login OK ✅ Redirection…")
+                    st.rerun()
+
+        st.divider()
+
+        # -----------------------------
+        # SIGN-UP (CR03/CR04) + RESET DATASET (Option A)
+        # -----------------------------
+        with st.container(border=True):
+            st.markdown("### Créer un compte")
+            st.caption("⚠️ Mode démo : la création de compte réinitialise les données (requests / campagnes / mails).")
+
+            with st.form("signup_form", clear_on_submit=True):
+                first_name = st.text_input("Prénom", value="")
+                last_name = st.text_input("Nom", value="")
+                new_email = st.text_input("Email", value="")
+                new_password = st.text_input("Mot de passe", value="", type="password")
+                create = st.form_submit_button("✅ Créer mon compte", use_container_width=True)
+
+            if create:
+                fn = (first_name or "").strip()
+                ln = (last_name or "").strip()
+                em = (new_email or "").strip()
+                pw = new_password or ""
+
+                if not fn or not ln or not em or not pw:
+                    st.error("Tous les champs sont obligatoires.")
+                elif "@" not in em:
+                    st.error("Email invalide.")
+                elif len(pw) < 4:
+                    st.error("Mot de passe trop court (min 4 caractères).")
+                else:
+                    # Prevent overwriting existing accounts
+                    if find_user(em):
+                        st.error("Cet email existe déjà. Utilise la connexion ou contacte admin@everboarding.fr.")
+                    else:
+                        # OPTION A: reset runtime data on each sign-up
+                        try:
+                            reset_runtime_data()
+                        except Exception as e:
+                            st.error(f"Reset dataset impossible : {e}")
+                            st.stop()
+
+                        try:
+                            create_user(
+                                email=em,
+                                role="learner",
+                                password=pw,
+                                status="active",
+                                created_by="self_signup",
+                                first_name=fn,
+                                last_name=ln,
+                            )
+                        except Exception as e:
+                            st.error(str(e))
+                            st.stop()
+
+                        # Auto-login
+                        u = authenticate(em, pw)
+                        if not u:
+                            st.error("Compte créé, mais login impossible. Contacte admin@everboarding.fr.")
+                        else:
+                            st.session_state["user"] = u
+                            st.session_state["just_logged_in"] = True
+                            st.success("Compte créé ✅ Redirection…")
+                            st.rerun()
 
 with right:
     st.subheader("Rappel")
@@ -140,4 +215,3 @@ with right:
     )
 
 st.divider()
-st.caption("Tip démo : connecte-toi, tu es routé automatiquement vers l’espace correspondant.")

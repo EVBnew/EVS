@@ -18,6 +18,7 @@ DATA_DIR = PROJECT_ROOT / "data"
 
 REQUESTS_PATH = DATA_DIR / "requests.json"
 CAMPAIGNS_PATH = DATA_DIR / "campaigns.json"
+EMAILS_OUTBOX_PATH = DATA_DIR / "emails_outbox.json"
 
 # Uploads live inside the package (so the app can reference relative paths)
 PACKAGE_DIR = THIS_FILE.parents[1]  # .../everskills
@@ -90,6 +91,24 @@ def _support_to_dict(s: Any) -> Optional[Dict[str, str]]:
 
 
 # ----------------------------
+# NEW: runtime reset (Option A)
+# ----------------------------
+def reset_runtime_data() -> None:
+    """
+    Resets runtime data files (demo mode).
+    - requests.json -> []
+    - campaigns.json -> []
+    - emails_outbox.json -> []
+    Safe: creates files if missing.
+    """
+    ensure_dirs()
+    _write_json(REQUESTS_PATH, [])
+    _write_json(CAMPAIGNS_PATH, [])
+    # Outbox is optional in some setups, but we keep it consistent if used
+    _write_json(EMAILS_OUTBOX_PATH, [])
+
+
+# ----------------------------
 # NEW: workflow checkpoints helpers (check-in/check-out/touchpoints)
 # ----------------------------
 def _default_checkpoints(weeks: int) -> Dict[str, Any]:
@@ -104,9 +123,7 @@ def _default_checkpoints(weeks: int) -> Dict[str, Any]:
     return {
         "checkin": {"done": False, "date": None},
         "checkout": {"done": False, "date": None},
-        "touchpoints": [
-            {"week": i + 1, "done": False, "date": None, "note": ""} for i in range(weeks)
-        ],
+        "touchpoints": [{"week": i + 1, "done": False, "date": None, "note": ""} for i in range(weeks)],
     }
 
 
