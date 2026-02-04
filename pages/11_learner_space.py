@@ -1,4 +1,4 @@
-# pages/learner_space.py
+# pages/11_learner_space.py
 from __future__ import annotations
 
 from typing import Any, Dict, List
@@ -30,6 +30,32 @@ if user.get("role") != "learner":
     st.warning("Accès réservé aux apprenants.")
     st.info("Passe par Projects pour être routé correctement.")
     st.stop()
+
+# ----------------------------
+# CR-04 — Sécurité du compte
+# (DOIT être avant tout st.stop métier)
+# ----------------------------
+st.divider()
+st.markdown("### 🔐 Sécurité du compte")
+
+with st.container(border=True):
+    with st.form("change_password_form", clear_on_submit=True):
+        old_pw = st.text_input("Mot de passe actuel", type="password")
+        new_pw = st.text_input("Nouveau mot de passe", type="password")
+        confirm_pw = st.text_input("Confirmer le nouveau mot de passe", type="password")
+        submit_pw = st.form_submit_button("Changer mon mot de passe")
+
+    if submit_pw:
+        if not old_pw or not new_pw or not confirm_pw:
+            st.error("Tous les champs sont requis.")
+        elif new_pw != confirm_pw:
+            st.error("Les mots de passe ne correspondent pas.")
+        else:
+            try:
+                change_password(user["email"], old_pw, new_pw)
+                st.success("Mot de passe mis à jour ✅")
+            except Exception as e:
+                st.error(str(e))
 
 # ----------------------------
 # Helpers
@@ -370,28 +396,3 @@ with t2:
                         save_campaigns(campaigns)
                         st.success("OK ✅")
                         st.rerun()
-
-# ----------------------------
-# CR-04: Mot de passe personnel modifiable (bloc isolé, sans impact sur le reste)
-# ----------------------------
-st.divider()
-st.markdown("### 🔐 Sécurité du compte")
-
-with st.container(border=True):
-    with st.form("change_password_form", clear_on_submit=True):
-        old_pw = st.text_input("Mot de passe actuel", type="password")
-        new_pw = st.text_input("Nouveau mot de passe", type="password")
-        confirm_pw = st.text_input("Confirmer le nouveau mot de passe", type="password")
-        submit_pw = st.form_submit_button("Changer mon mot de passe")
-
-    if submit_pw:
-        if not old_pw or not new_pw or not confirm_pw:
-            st.error("Tous les champs sont requis.")
-        elif new_pw != confirm_pw:
-            st.error("Les mots de passe ne correspondent pas.")
-        else:
-            try:
-                change_password(user["email"], old_pw, new_pw)
-                st.success("Mot de passe mis à jour ✅")
-            except Exception as e:
-                st.error(str(e))
