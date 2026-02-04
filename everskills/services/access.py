@@ -6,19 +6,23 @@ import hashlib
 import hmac
 import json
 import os
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
-
-from everskills.services.storage import now_iso
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 BASE_DIR = Path(__file__).resolve().parents[2]  # EVERSKILLS/
 DATA_DIR = BASE_DIR / "data"
 ACCESS_PATH = DATA_DIR / "access.json"
 
-ROLES = ["learner", "coach", "admin", "super_admin", "manager"]
-ADMIN_ROLES = {"admin", "super_admin"}
+ROLES: List[str] = ["learner", "coach", "admin", "super_admin", "manager"]
+ADMIN_ROLES: Set[str] = {"admin", "super_admin"}
 
 PBKDF2_ITERS = 210_000
+
+
+def now_iso() -> str:
+    """Local timestamp helper (avoid cross-module import issues)."""
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _norm_email(s: str) -> str:
@@ -33,7 +37,10 @@ def _read_json(path: Path, default: Any) -> Any:
     if not path.exists():
         return default
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        raw = path.read_text(encoding="utf-8")
+        if not raw.strip():
+            return default
+        return json.loads(raw)
     except Exception:
         return default
 
@@ -43,15 +50,15 @@ def _write_json(path: Path, data: Any) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def _pbkdf2_hash(password: str, salt: bytes) -> bytes:
-    return hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PBKDF2_ITERS)
+def _pbkdf2_hash(password: str, salt: bytes, iters: int) -> bytes:
+    return hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iters)
 
 
 def hash_password(password: str) -> str:
     if not password or len(password) < 4:
         raise ValueError("Password too short")
     salt = os.urandom(16)
-    dk = _pbkdf2_hash(password, salt)
+    dk = _pbkdf2_hash(password, salt, PBKDF2_ITERS)
     return "pbkdf2_sha256${}${}${}".format(
         PBKDF2_ITERS,
         base64.b64encode(salt).decode("ascii"),
@@ -67,7 +74,7 @@ def verify_password(password: str, stored: str) -> bool:
         iters = int(iters_s)
         salt = base64.b64decode(salt_b64.encode("ascii"))
         expected = base64.b64decode(hash_b64.encode("ascii"))
-        dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iters)
+        dk = _pbkdf2_hash(password or "", salt, iters)
         return hmac.compare_digest(dk, expected)
     except Exception:
         return False
@@ -77,7 +84,7 @@ def load_access() -> List[Dict[str, Any]]:
     data = _read_json(ACCESS_PATH, default=[])
     if not isinstance(data, list):
         return []
-    return [x for x in data if isinstance(x, dict)]
+    return [x for x in data if isinstance(x, dict) and x.get("email")]
 
 
 def save_access(rows: List[Dict[str, Any]]) -> None:
@@ -98,20 +105,19 @@ def upsert_user(user: Dict[str, Any]) -> None:
     if not email:
         raise ValueError("Missing email")
 
-    # normalize optional fields
+    user = dict(user)  # avoid mutating caller
     user["email"] = email
     user["first_name"] = str(user.get("first_name") or "").strip()
     user["last_name"] = str(user.get("last_name") or "").strip()
 
     rows = load_access()
-    replaced = False
     for i, u in enumerate(rows):
         if _norm_email(u.get("email", "")) == email:
             rows[i] = user
-            replaced = True
-            break
-    if not replaced:
-        rows.append(user)
+            save_access(rows)
+            return
+
+    rows.append(user)
     save_access(rows)
 
 
@@ -184,7 +190,6 @@ def authenticate(email: str, password: str) -> Optional[Dict[str, Any]]:
     if not verify_password(password or "", str(u.get("password_hash") or "")):
         return None
 
-    # Return a "safe" view (no hash)
     return {
         "email": email,
         "role": str(u.get("role") or "learner"),
@@ -214,6 +219,6 @@ def require_login(session_user: Optional[Dict[str, Any]]) -> Tuple[bool, str]:
     return True, ""
 
 
-def can_access_role(session_user: Dict[str, Any], allowed_roles: set[str]) -> bool:
+def can_access_role(session_user: Dict[str, Any], allowed_roles: Set[str]) -> bool:
     role = str(session_user.get("role") or "")
     return role in allowed_roles
