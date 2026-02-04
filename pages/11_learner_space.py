@@ -5,7 +5,7 @@ from typing import Any, Dict, List
 import uuid
 import streamlit as st
 
-from everskills.services.access import require_login
+from everskills.services.access import require_login, change_password
 from everskills.services.storage import (
     load_requests,
     save_requests,
@@ -39,8 +39,10 @@ def _as_list(x: Any) -> List[Any]:
         return []
     return x if isinstance(x, list) else [x]
 
+
 def _norm_email(s: str) -> str:
     return (s or "").strip().lower()
+
 
 ACTION_STATUSES = [
     ("not_started", "🔴 Pas fait"),
@@ -48,6 +50,7 @@ ACTION_STATUSES = [
     ("done", "🟢 Fait"),
 ]
 ACTION_LABEL = {k: v for k, v in ACTION_STATUSES}
+
 
 def _upsert_campaign(campaigns: List[Dict[str, Any]], camp: Dict[str, Any]) -> List[Dict[str, Any]]:
     cid = str(camp.get("id") or "").strip()
@@ -62,6 +65,7 @@ def _upsert_campaign(campaigns: List[Dict[str, Any]], camp: Dict[str, Any]) -> L
     if not replaced:
         out.append(camp)
     return out
+
 
 def _ensure_weekly_plan(camp: Dict[str, Any]) -> Dict[str, Any]:
     try:
@@ -114,6 +118,7 @@ def _ensure_weekly_plan(camp: Dict[str, Any]) -> Dict[str, Any]:
     camp["closure_message"] = str(camp.get("closure_message") or "").strip()
     return camp
 
+
 def _compute_week_completion(week: Dict[str, Any]) -> float:
     actions = week.get("actions") or []
     if not isinstance(actions, list) or not actions:
@@ -131,6 +136,7 @@ def _compute_week_completion(week: Dict[str, Any]) -> float:
             done += 1
     return (done / total * 100.0) if total else 0.0
 
+
 def _compute_global_completion(camp: Dict[str, Any]) -> float:
     wp = camp.get("weekly_plan") or []
     if not isinstance(wp, list) or not wp:
@@ -142,6 +148,7 @@ def _compute_global_completion(camp: Dict[str, Any]) -> float:
             total_pct += _compute_week_completion(w)
             count += 1
     return (total_pct / count) if count else 0.0
+
 
 # ----------------------------
 # UI
@@ -249,7 +256,6 @@ with t2:
             st.markdown("### 💬 Message du coach")
             st.success(kickoff)
 
-        # Message de clôture
         if str(camp.get("status") or "").strip() == "closed":
             closing = str(camp.get("closure_message") or "").strip()
             st.divider()
@@ -364,3 +370,28 @@ with t2:
                         save_campaigns(campaigns)
                         st.success("OK ✅")
                         st.rerun()
+
+# ----------------------------
+# CR-04: Mot de passe personnel modifiable (bloc isolé, sans impact sur le reste)
+# ----------------------------
+st.divider()
+st.markdown("### 🔐 Sécurité du compte")
+
+with st.container(border=True):
+    with st.form("change_password_form", clear_on_submit=True):
+        old_pw = st.text_input("Mot de passe actuel", type="password")
+        new_pw = st.text_input("Nouveau mot de passe", type="password")
+        confirm_pw = st.text_input("Confirmer le nouveau mot de passe", type="password")
+        submit_pw = st.form_submit_button("Changer mon mot de passe")
+
+    if submit_pw:
+        if not old_pw or not new_pw or not confirm_pw:
+            st.error("Tous les champs sont requis.")
+        elif new_pw != confirm_pw:
+            st.error("Les mots de passe ne correspondent pas.")
+        else:
+            try:
+                change_password(user["email"], old_pw, new_pw)
+                st.success("Mot de passe mis à jour ✅")
+            except Exception as e:
+                st.error(str(e))
