@@ -1,7 +1,7 @@
 ﻿# app.py
 from __future__ import annotations
 
-BUILD_ID = "1.2"
+BUILD_ID = "1.21"
 BUILD_DATE = "4 février 2026"
 
 import sys
