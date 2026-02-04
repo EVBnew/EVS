@@ -462,3 +462,13 @@ def create_campaign_from_request(req: Dict[str, Any], coach_email: str = "") -> 
         "updated_at": now_iso(),
     }
     return _normalize_campaign(camp)
+# ----------------------------
+# DEV helper (used by app.py)
+# ----------------------------
+def reset_runtime_data() -> None:
+    """
+    DEV helper: reset runtime JSON stores (safe).
+    """
+    ensure_dirs()
+    _write_json(REQUESTS_PATH, [])
+    _write_json(CAMPAIGNS_PATH, [])

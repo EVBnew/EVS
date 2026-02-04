@@ -24,3 +24,18 @@ temp_uploads/
 # Local data files
 /data/*.json
 
+__pycache__/
+*.pyc
+data/*.json
+services__legacy/
+*.JPG
+__pycache__/
+*.pyc
+data/*.json
+services__legacy/
+*.JPG
+__pycache__/
+*.pyc
+data/*.json
+services__legacy/
+*.JPG
