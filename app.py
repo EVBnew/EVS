@@ -141,9 +141,9 @@ section[data-testid="stSidebar"] { display: none; }
 if h1:
     h1("WELCOME")  # type: ignore
 else:
-    st.title("WELCOME")
+    st.title("VOTRE LOGO")
 
-st.caption("EVERSKILLS · passez de la théorie à la pratique")
+st.caption("Propulsé par EVERSKILLS · plateforme d'upskilling")
 
 user = st.session_state.get("user")
 
