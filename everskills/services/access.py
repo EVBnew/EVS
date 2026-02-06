@@ -1,14 +1,12 @@
 # everskills/services/access.py
 from __future__ import annotations
 
-import base64
-import hashlib
-import hmac
 import json
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+from everskills.services.passwords import hash_password_pbkdf2, verify_password_pbkdf2
 
 BASE_DIR = Path(__file__).resolve().parents[2]  # EVERSKILLS/
 DATA_DIR = BASE_DIR / "data"
@@ -16,8 +14,6 @@ ACCESS_PATH = DATA_DIR / "access.json"
 
 ROLES = ["learner", "coach", "admin", "super_admin", "manager"]
 ADMIN_ROLES = {"admin", "super_admin"}
-
-PBKDF2_ITERS = 210_000
 
 
 def now_iso() -> str:
@@ -44,36 +40,6 @@ def _read_json(path: Path, default: Any) -> Any:
 def _write_json(path: Path, data: Any) -> None:
     _ensure_data_dir()
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-def _pbkdf2_hash(password: str, salt: bytes, iters: int) -> bytes:
-    return hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iters)
-
-
-def hash_password(password: str) -> str:
-    if not password or len(password) < 4:
-        raise ValueError("Password too short")
-    salt = os.urandom(16)
-    dk = _pbkdf2_hash(password, salt, PBKDF2_ITERS)
-    return "pbkdf2_sha256${}${}${}".format(
-        PBKDF2_ITERS,
-        base64.b64encode(salt).decode("ascii"),
-        base64.b64encode(dk).decode("ascii"),
-    )
-
-
-def verify_password(password: str, stored: str) -> bool:
-    try:
-        algo, iters_s, salt_b64, hash_b64 = stored.split("$", 3)
-        if algo != "pbkdf2_sha256":
-            return False
-        iters = int(iters_s)
-        salt = base64.b64decode(salt_b64.encode("ascii"))
-        expected = base64.b64decode(hash_b64.encode("ascii"))
-        dk = _pbkdf2_hash(password or "", salt, iters)
-        return hmac.compare_digest(dk, expected)
-    except Exception:
-        return False
 
 
 def load_access() -> List[Dict[str, Any]]:
@@ -143,7 +109,7 @@ def create_user(
         "status": status,
         "first_name": (first_name or "").strip(),
         "last_name": (last_name or "").strip(),
-        "password_hash": hash_password(password),
+        "password_hash": hash_password_pbkdf2(password),
         "created_at": now_iso(),
         "updated_at": now_iso(),
         "created_by": _norm_email(created_by),
@@ -152,36 +118,76 @@ def create_user(
     return user
 
 
+# -----------------------------------------------------------------------------
+# Google Sheet helpers (CR06)
+# -----------------------------------------------------------------------------
+def _find_user_in_gsheet(email: str) -> Optional[Dict[str, Any]]:
+    try:
+        from everskills.services.gsheet_access import get_gsheet_api  # local import to avoid cycles
+
+        api = get_gsheet_api()
+        res = api.list_users()
+        if not res.ok:
+            return None
+        rows = res.data.get("rows", [])
+        em = _norm_email(email)
+        for r in rows:
+            if _norm_email(str(r.get("email") or "")) == em:
+                return r
+        return None
+    except Exception:
+        return None
+
+
+def _update_user_in_gsheet(*, email: str, updates: Dict[str, Any], request_id: str = "") -> None:
+    try:
+        from everskills.services.gsheet_access import get_gsheet_api  # local import to avoid cycles
+
+        api = get_gsheet_api()
+        api.update_user(request_id=request_id, email=_norm_email(email), updates=updates)
+    except Exception:
+        pass
+
+
 def set_password(email: str, new_password: str, actor: str = "admin") -> None:
     email = _norm_email(email)
     u = find_user(email)
     if not u:
         raise ValueError("User not found")
-    u["password_hash"] = hash_password(new_password)
+
+    new_hash = hash_password_pbkdf2(new_password)
+    u["password_hash"] = new_hash
     u["updated_at"] = now_iso()
     u["last_password_reset_by"] = _norm_email(actor)
     upsert_user(u)
 
+    # Mirror to GSheet (same hash field used by approvals/login fallback)
+    _update_user_in_gsheet(email=email, updates={"initial_password": new_hash})
+
 
 def change_password(email: str, old_password: str, new_password: str) -> None:
     """
-    CR-04: Allow user to change their own password (requires current password).
+    User changes own password (requires current password).
+    Mirrors new hash to GSheet.initial_password.
     """
     email = _norm_email(email)
     u = find_user(email)
     if not u:
         raise ValueError("User not found")
 
-    if not verify_password(old_password or "", str(u.get("password_hash") or "")):
+    if not verify_password_pbkdf2(old_password or "", str(u.get("password_hash") or "")):
         raise ValueError("Mot de passe actuel incorrect")
 
     if not new_password or len(new_password) < 4:
         raise ValueError("Nouveau mot de passe trop court")
 
-    u["password_hash"] = hash_password(new_password)
+    new_hash = hash_password_pbkdf2(new_password)
+    u["password_hash"] = new_hash
     u["updated_at"] = now_iso()
     u["last_password_change_at"] = now_iso()
     upsert_user(u)
+
+    _update_user_in_gsheet(email=email, updates={"initial_password": new_hash})
 
 
 def set_status(email: str, new_status: str, actor: str = "admin") -> None:
@@ -198,21 +204,71 @@ def set_status(email: str, new_status: str, actor: str = "admin") -> None:
 
 
 def authenticate(email: str, password: str) -> Optional[Dict[str, Any]]:
+    """
+    Auth strategy:
+      1) local access.json
+      2) fallback Google Sheet:
+         - status must be active
+         - password checked against sheet.initial_password (same pbkdf2 format)
+         - bootstrap user locally (store same hash in password_hash)
+    """
     email = _norm_email(email)
+
+    # 1) Local
     u = find_user(email)
-    if not u:
+    if u:
+        if (u.get("status") or "") != "active":
+            return None
+        if not verify_password_pbkdf2(password or "", str(u.get("password_hash") or "")):
+            return None
+        return {
+            "email": email,
+            "role": str(u.get("role") or "learner"),
+            "status": str(u.get("status") or "active"),
+            "first_name": str(u.get("first_name") or "").strip(),
+            "last_name": str(u.get("last_name") or "").strip(),
+        }
+
+    # 2) Google Sheet fallback
+    row = _find_user_in_gsheet(email)
+    if not row:
         return None
-    if (u.get("status") or "") != "active":
+
+    status = str(row.get("status") or "").strip().lower()
+    if status != "active":
         return None
-    if not verify_password(password or "", str(u.get("password_hash") or "")):
+
+    sheet_hash = str(row.get("initial_password") or "").strip()
+    if not sheet_hash:
         return None
+
+    if not verify_password_pbkdf2(password or "", sheet_hash):
+        return None
+
+    role = str(row.get("role") or "learner").strip() or "learner"
+    if role not in ROLES:
+        role = "learner"
+
+    local_user = {
+        "email": email,
+        "role": role,
+        "status": "active",
+        "first_name": str(row.get("first_name") or "").strip(),
+        "last_name": str(row.get("last_name") or "").strip(),
+        "password_hash": sheet_hash,
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+        "created_by": "bootstrap_gsheet",
+        "bootstrap_request_id": str(row.get("request_id") or "").strip(),
+    }
+    upsert_user(local_user)
 
     return {
         "email": email,
-        "role": str(u.get("role") or "learner"),
-        "status": str(u.get("status") or "active"),
-        "first_name": str(u.get("first_name") or "").strip(),
-        "last_name": str(u.get("last_name") or "").strip(),
+        "role": role,
+        "status": "active",
+        "first_name": local_user["first_name"],
+        "last_name": local_user["last_name"],
     }
 
 

@@ -1,11 +1,12 @@
 ﻿# app.py
 from __future__ import annotations
 
-BUILD_ID = "1.21"
+BUILD_ID = "1.2"
 BUILD_DATE = "4 février 2026"
 
 import sys
 from pathlib import Path
+import uuid
 
 import streamlit as st
 
@@ -19,10 +20,10 @@ if str(REPO_ROOT) not in sys.path:
 from everskills.services.access import (  # noqa: E402
     ensure_demo_seed,
     authenticate,
-    create_user,
     find_user,
 )
-from everskills.services.storage import reset_runtime_data  # noqa: E402
+from everskills.services.gsheet_access import get_gsheet_api  # noqa: E402
+from everskills.services.mailer import send_email  # noqa: E402
 
 # -----------------------------------------------------------------------------
 # Page config (MUST be first Streamlit call)
@@ -36,7 +37,6 @@ try:
     ensure_demo_seed()
 except Exception:
     pass
-
 
 # -----------------------------------------------------------------------------
 # Helpers
@@ -67,15 +67,8 @@ st.markdown(
     """
 <style>
 section[data-testid="stSidebarNav"] { display: none; }
-
-.block-container {
-    max-width: 1200px;
-    padding-top: 2.2rem;
-}
-
-div[data-testid="stTextInput"] input {
-    border-radius: 10px;
-}
+.block-container { max-width: 1200px; padding-top: 2.2rem; }
+div[data-testid="stTextInput"] input { border-radius: 10px; }
 
 /* Buttons */
 div[data-testid="stButton"] > button,
@@ -85,12 +78,10 @@ div[data-testid="stFormSubmitButton"] > button {
   min-height: 44px !important;
   font-weight: 600 !important;
 }
-
 .evs-btn-primary div[data-testid="stFormSubmitButton"] > button {
   background: linear-gradient(180deg, #2F80ED 0%, #1F6FE5 100%) !important;
   color: #FFFFFF !important;
 }
-
 .evs-btn-secondary div[data-testid="stFormSubmitButton"] > button {
   background: linear-gradient(180deg, #F7F8FA 0%, #E9EDF3 100%) !important;
   color: #1F2A37 !important;
@@ -109,7 +100,6 @@ try:
     apply_brand()
 except Exception:
     h1 = None  # type: ignore
-
 
 # -----------------------------------------------------------------------------
 # Sidebar (role-based)
@@ -131,20 +121,19 @@ with st.sidebar:
 
     if r == "learner":
         st.page_link("pages/11_learner_space.py", label="Learner Space", icon="🎯")
-
     if r in ("coach", "admin", "super_admin"):
         st.page_link("pages/10_coach_space.py", label="Coach Space", icon="🧠")
 
-# Hide sidebar on Welcome when not logged
-if not st.session_state.get("user"):
-    st.markdown(
-        """
+    # Hide sidebar on Welcome when not logged
+    if not st.session_state.get("user"):
+        st.markdown(
+            """
 <style>
 section[data-testid="stSidebar"] { display: none; }
 </style>
 """,
-        unsafe_allow_html=True,
-    )
+            unsafe_allow_html=True,
+        )
 
 # -----------------------------------------------------------------------------
 # WELCOME
@@ -183,14 +172,11 @@ col_login, col_signup = st.columns([1.15, 1.0], gap="large")
 
 with col_login:
     st.subheader("Accès")
-
     with st.container(border=True):
         st.markdown("### Connexion")
-
         with st.form("login_form"):
             email = st.text_input("Email")
             password = st.text_input("Mot de passe", type="password")
-
             st.markdown('<div class="evs-btn-primary">', unsafe_allow_html=True)
             submitted = st.form_submit_button("Connexion")
             st.markdown("</div>", unsafe_allow_html=True)
@@ -208,54 +194,59 @@ with col_login:
 with col_signup:
     with st.container(border=True):
         st.markdown("### Créer un compte")
+        st.caption("Si tu n’as pas encore de mot de passe, fais une demande. L’admin te donnera tes accès.")
 
         with st.form("signup_form", clear_on_submit=True):
             first_name = st.text_input("Prénom")
             last_name = st.text_input("Nom")
             new_email = st.text_input("Email")
-            new_password = st.text_input("Mot de passe", type="password")
 
             st.markdown('<div class="evs-btn-secondary">', unsafe_allow_html=True)
-            create = st.form_submit_button("Créer mon compte")
+            create = st.form_submit_button("Envoyer ma demande d’accès")
             st.markdown("</div>", unsafe_allow_html=True)
 
         if create:
-            fn, ln, em, pw = (
-                (first_name or "").strip(),
-                (last_name or "").strip(),
-                (new_email or "").strip(),
-                new_password or "",
+            fn = (first_name or "").strip()
+            ln = (last_name or "").strip()
+            em = (new_email or "").strip().lower()
+
+            if not fn or not ln or not em:
+                st.error("Tous les champs sont obligatoires.")
+                st.stop()
+            if "@" not in em:
+                st.error("Email invalide.")
+                st.stop()
+
+            if find_user(em):
+                st.info("Un compte existe déjà pour cet email. Essaie de te connecter.")
+                st.stop()
+
+            api = get_gsheet_api()
+            request_id = f"app-{uuid.uuid4().hex[:12]}"
+            res = api.create_user(
+                email=em,
+                first_name=fn,
+                last_name=ln,
+                role="learner",
+                status="pending",
+                initial_password="",
+                source="streamlit",
+                request_id=request_id,
             )
 
-            if not fn or not ln or not em or not pw:
-                st.error("Tous les champs sont obligatoires.")
-            elif "@" not in em:
-                st.error("Email invalide.")
-            elif len(pw) < 4:
-                st.error("Mot de passe trop court.")
-            elif find_user(em):
-                st.error("Cet email existe déjà.")
-            else:
-                try:
-                    reset_runtime_data()
-                    create_user(
-                        email=em,
-                        role="learner",
-                        password=pw,
-                        status="active",
-                        created_by="self_signup",
-                        first_name=fn,
-                        last_name=ln,
-                    )
-                except Exception as e:
-                    st.error(str(e))
-                    st.stop()
+            if not res.ok:
+                st.error(f"Demande non envoyée : {res.error}")
+                st.json(res.data)
+                st.stop()
 
-                u = authenticate(em, pw)
-                if not u:
-                    st.error("Compte créé, mais login impossible.")
-                else:
-                    st.session_state["user"] = u
-                    st.session_state["just_logged_in"] = True
-                    st.success("Compte créé ✅")
-                    st.rerun()
+            # Email admin (notification)
+            admin_email = str(st.secrets.get("ACCESS_ADMIN_EMAIL") or "admin@everboarding.fr")
+            send_email(
+                to_email=admin_email,
+                subject="[EVERSKILLS] Nouvelle demande d’accès",
+                text_body=f"Nouvelle demande:\n{fn} {ln}\n{em}\nrequest_id={request_id}\n",
+                meta={"flow": "CR06", "type": "admin_notify", "request_id": request_id},
+            )
+
+            st.success("Demande envoyée ✅")
+            st.info(f"Tu recevras tes identifiants par email après validation par l’admin ({admin_email}).")

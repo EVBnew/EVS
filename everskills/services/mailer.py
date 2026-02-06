@@ -45,6 +45,47 @@ def _append_outbox(item: Dict[str, Any]) -> None:
     OUTBOX_PATH.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _get_secret_str(*keys: str, default: str = "") -> str:
+    """
+    Returns the first non-empty secret among keys.
+    """
+    for k in keys:
+        v = st.secrets.get(k)
+        if v is None:
+            continue
+        s = str(v).strip()
+        if s:
+            return s
+    return default
+
+
+def _get_secret_int(*keys: str, default: int) -> int:
+    for k in keys:
+        v = st.secrets.get(k)
+        if v is None:
+            continue
+        try:
+            return int(v)
+        except Exception:
+            continue
+    return default
+
+
+def _get_secret_bool(*keys: str, default: bool) -> bool:
+    for k in keys:
+        v = st.secrets.get(k)
+        if v is None:
+            continue
+        if isinstance(v, bool):
+            return v
+        s = str(v).strip().lower()
+        if s in {"true", "1", "yes", "y", "on"}:
+            return True
+        if s in {"false", "0", "no", "n", "off"}:
+            return False
+    return default
+
+
 @dataclass
 class SMTPConfig:
     host: str
@@ -52,34 +93,58 @@ class SMTPConfig:
     user: str
     password: str
     email_from: str
+    starttls: bool
 
 
 def get_smtp_config() -> Optional[SMTPConfig]:
     """
     Reads SMTP config from Streamlit secrets.
 
-    Expected keys in .streamlit/secrets.toml:
-      SMTP_HOST
-      SMTP_PORT
-      SMTP_USER
-      SMTP_PASS
-      EMAIL_FROM   (optional, defaults to SMTP_USER)
+    Backward compatible keys (old + new):
+
+    Host:
+      - SMTP_HOST
+
+    Port:
+      - SMTP_PORT
+
+    User:
+      - SMTP_USER
+
+    Password:
+      - SMTP_PASS (old)
+      - SMTP_PASSWORD (new)
+
+    From:
+      - EMAIL_FROM (old)
+      - SMTP_FROM_EMAIL (new)
+      - default: SMTP_USER
+
+    TLS:
+      - SMTP_STARTTLS (new, optional) default True for port 587
     """
-    host = (st.secrets.get("SMTP_HOST") or "").strip()
-    port_raw = st.secrets.get("SMTP_PORT")
-    user = (st.secrets.get("SMTP_USER") or "").strip()
-    password = (st.secrets.get("SMTP_PASS") or "").strip()
-    email_from = (st.secrets.get("EMAIL_FROM") or user).strip()
+    host = _get_secret_str("SMTP_HOST")
+    port = _get_secret_int("SMTP_PORT", default=587)
+    user = _get_secret_str("SMTP_USER")
+
+    password = _get_secret_str("SMTP_PASS", "SMTP_PASSWORD")
+    email_from = _get_secret_str("EMAIL_FROM", "SMTP_FROM_EMAIL", default=user)
+
+    # Default behavior: STARTTLS True on 587, else False unless explicitly set
+    default_starttls = True if port == 587 else False
+    starttls = _get_secret_bool("SMTP_STARTTLS", default=default_starttls)
 
     if not host or not user or not password:
         return None
 
-    try:
-        port = int(port_raw) if port_raw is not None else 587
-    except Exception:
-        port = 587
-
-    return SMTPConfig(host=host, port=port, user=user, password=password, email_from=email_from)
+    return SMTPConfig(
+        host=host,
+        port=port,
+        user=user,
+        password=password,
+        email_from=email_from,
+        starttls=starttls,
+    )
 
 
 def smtp_is_configured() -> bool:
@@ -98,7 +163,7 @@ def send_email(
     Sends an email via SMTP if configured, otherwise writes into data/emails_outbox.json.
 
     Returns a dict:
-      {"ok": True/False, "mode": "smtp"|"outbox", "details": "..."}
+      {"ok": True/False, "mode": "smtp"|"outbox"|"none", "details": "..."}
     """
     to_email = (to_email or "").strip()
     if not to_email:
@@ -144,10 +209,11 @@ def send_email(
     try:
         with smtplib.SMTP(cfg.host, cfg.port, timeout=30) as server:
             server.ehlo()
-            # TLS for 587
-            if cfg.port == 587:
+
+            if cfg.starttls:
                 server.starttls(context=context)
                 server.ehlo()
+
             server.login(cfg.user, cfg.password)
             server.send_message(msg)
 
