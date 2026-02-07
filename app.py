@@ -143,7 +143,7 @@ if h1:
 else:
     st.title("VOTRE LOGO")
 
-st.caption("Propulsé par EVERSKILLS · plateforme d'upskilling")
+st.caption("Propulsé par EVERBOARDING · Upskilling Solutions")
 
 user = st.session_state.get("user")
 
