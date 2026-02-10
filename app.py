@@ -27,6 +27,9 @@ from everskills.services.access import (  # noqa: E402
     ensure_demo_seed,
     authenticate,
     find_user,
+    issue_session_token,
+    load_user_from_session_token,
+
 )
 from everskills.services.passwords import hash_password_pbkdf2  # noqa: E402
 from everskills.services.gsheet_access import get_gsheet_api  # noqa: E402
@@ -39,6 +42,24 @@ try:
     ensure_demo_seed()
 except Exception:
     pass
+# -------------------------------------------------------------------------
+# Session bootstrap from URL token (back button / refresh safe)
+# -------------------------------------------------------------------------
+qp = st.query_params
+session_token = (qp.get("session") or "").strip()
+
+if session_token and not st.session_state.get("user"):
+    u = load_user_from_session_token(session_token)
+    if u:
+        st.session_state["user"] = u
+        st.session_state["just_logged_in"] = False
+    else:
+        # token invalide → on nettoie pour éviter loop/back-button
+        try:
+            st.query_params.pop("session", None)
+        except Exception:
+            pass
+
 
 # -----------------------------------------------------------------------------
 # Global CSS (single source of truth)
@@ -116,6 +137,11 @@ def _logout() -> None:
     for k in ["user", "just_logged_in", "auth_mode"]:
         if k in st.session_state:
             del st.session_state[k]
+    try:
+        st.query_params.pop("session", None)
+    except Exception:
+        pass
+
 
 
 def _route_user(u: dict) -> None:
@@ -198,8 +224,6 @@ else:
 user = st.session_state.get("user")
 st.caption("Propulsé par EVERBOARDING · Upskilling Solutions ·")
 
-user = st.session_state.get("user")
-
 # Hide sidebar on Welcome when not logged
 if not user:
     st.markdown(
@@ -239,59 +263,79 @@ if user:
 # -----------------------------------------------------------------------------
 def _reset_screen(token: str, email: str) -> None:
     st.subheader("Réinitialiser le mot de passe")
+
     with st.container(border=True):
         em = st.text_input("Email", value=email or "", disabled=bool(email))
         p1 = st.text_input("Nouveau mot de passe", type="password")
         p2 = st.text_input("Confirmer", type="password")
 
-        ok_submit = st.button("Enregistrer", type="primary", use_container_width=False)
+        ok_submit = st.button("Enregistrer", type="primary")
 
-        if ok_submit:
-            em2 = (em or "").strip().lower()
-            if not em2 or "@" not in em2:
-                st.error("Email invalide.")
-                st.stop()
-            if not p1 or len(p1) < 10:
-                st.error("Mot de passe trop court (min 10 caractères).")
-                st.stop()
-            if p1 != p2:
-                st.error("Les mots de passe ne correspondent pas.")
-                st.stop()
+        if not ok_submit:
+            return
 
-            res = _call_apps_script("confirm_password_reset", {"email": em2, "token": token, "new_password": p1})
-            if not res.get("ok"):
-                st.error("Lien invalide ou expiré.")
-                st.stop()
+        em2 = (em or "").strip().lower()
+        if not em2 or "@" not in em2:
+            st.error("Email invalide.")
+            st.stop()
+        if not p1 or len(p1) < 10:
+            st.error("Mot de passe trop court (min 10 caractères).")
+            st.stop()
+        if p1 != p2:
+            st.error("Les mots de passe ne correspondent pas.")
+            st.stop()
 
-            new_hash = hash_password_pbkdf2(p1)
-            api = get_gsheet_api()
-            updates = {
-                "initial_password": new_hash,
-                "reset_token_hash": "",
-                "reset_expires_at": "",
-                "reset_requested_at": "",
-            }
+        res = _call_apps_script(
+            "confirm_password_reset",
+            {"email": em2, "token": token, "new_password": p1},
+        )
+        if not res.get("ok"):
+            st.error("Lien invalide ou expiré.")
+            st.stop()
 
+        new_hash = hash_password_pbkdf2(p1)
+        api = get_gsheet_api()
+        updates = {
+            "initial_password": new_hash,
+            "reset_token_hash": "",
+            "reset_expires_at": "",
+            "reset_requested_at": "",
+        }
+
+        try:
+            upd = api.update_user(email=em2, request_id="", updates=updates)  # type: ignore
+        except TypeError:
+            upd = api.update_user(email=em2, updates=updates)  # type: ignore
+
+        if not getattr(upd, "ok", False):
+            st.error("Mot de passe non enregistré (update_user).")
+            st.caption(str(getattr(upd, "error", "")))
+            st.stop()
+
+        # Re-login + session token
+        u2 = authenticate(em2, p1)
+        if not u2:
+            st.success("Mot de passe mis à jour ✅")
+            st.info("Reconnecte-toi depuis l'écran de connexion.")
             try:
-                upd = api.update_user(email=em2, request_id="", updates=updates)  # type: ignore
-            except TypeError:
-                upd = api.update_user(email=em2, updates=updates)  # type: ignore
+                st.query_params.pop("reset_token", None)
+                st.query_params.pop("email", None)
+            except Exception:
+                pass
+            st.stop()
 
-            if not getattr(upd, "ok", False):
-                st.error("Mot de passe non enregistré (update_user).")
-                st.caption(str(getattr(upd, "error", "")))
-                st.stop()
+        st.session_state["user"] = u2
+        st.session_state["just_logged_in"] = True
+        st.query_params["session"] = issue_session_token(u2)
 
-            u = authenticate(em2, p1)
-            if not u:
-                st.success("Mot de passe mis à jour ✅")
-                st.info("Reconnecte-toi depuis l'écran de connexion.")
-                st.stop()
+        # Clean reset params only
+        try:
+            st.query_params.pop("reset_token", None)
+            st.query_params.pop("email", None)
+        except Exception:
+            pass
 
-            st.session_state["user"] = u
-            st.session_state["just_logged_in"] = True
-            st.query_params.clear()
-            st.rerun()
+        st.rerun()
 
 
 if reset_token:
@@ -351,8 +395,13 @@ with col_login:
                 else:
                     st.session_state["user"] = u
                     st.session_state["just_logged_in"] = True
+
+                    tok = issue_session_token(u)
+                    st.query_params["session"] = tok
+
                     st.success("Login OK ✅")
                     st.rerun()
+
 
 # --- RIGHT: SIGNUP
 with col_signup:
