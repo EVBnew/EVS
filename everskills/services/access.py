@@ -8,6 +8,11 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from everskills.services.passwords import hash_password_pbkdf2, verify_password_pbkdf2
 
+# ---------------------------------------------------------------------
+# Super Admin (email-based override)
+# ---------------------------------------------------------------------
+SUPER_ADMIN_EMAILS = {"admin@everboarding.fr"}
+
 BASE_DIR = Path(__file__).resolve().parents[2]  # EVERSKILLS/
 DATA_DIR = BASE_DIR / "data"
 ACCESS_PATH = DATA_DIR / "access.json"
@@ -22,6 +27,11 @@ def now_iso() -> str:
 
 def _norm_email(s: str) -> str:
     return (s or "").strip().lower()
+
+
+def _is_super_admin_email(email: str) -> bool:
+    em = _norm_email(email)
+    return em in {_norm_email(x) for x in SUPER_ADMIN_EMAILS}
 
 
 def _ensure_data_dir() -> None:
@@ -102,6 +112,10 @@ def create_user(
         raise ValueError("Invalid role")
     if status not in ("active", "inactive", "pending"):
         raise ValueError("Invalid status")
+
+    # Force super_admin role for listed emails
+    if _is_super_admin_email(email):
+        role = "super_admin"
 
     user = {
         "email": email,
@@ -221,9 +235,14 @@ def authenticate(email: str, password: str) -> Optional[Dict[str, Any]]:
             return None
         if not verify_password_pbkdf2(password or "", str(u.get("password_hash") or "")):
             return None
+
+        role = str(u.get("role") or "learner").strip()
+        if _is_super_admin_email(email):
+            role = "super_admin"
+
         return {
             "email": email,
-            "role": str(u.get("role") or "learner"),
+            "role": role,
             "status": str(u.get("status") or "active"),
             "first_name": str(u.get("first_name") or "").strip(),
             "last_name": str(u.get("last_name") or "").strip(),
@@ -246,7 +265,9 @@ def authenticate(email: str, password: str) -> Optional[Dict[str, Any]]:
         return None
 
     role = str(row.get("role") or "learner").strip() or "learner"
-    if role not in ROLES:
+    if _is_super_admin_email(email):
+        role = "super_admin"
+    elif role not in ROLES:
         role = "learner"
 
     local_user = {
@@ -271,15 +292,118 @@ def authenticate(email: str, password: str) -> Optional[Dict[str, Any]]:
         "last_name": local_user["last_name"],
     }
 
+# ---------------------------------------------------------------------
+# Session token helpers (stateless, signed)
+# ---------------------------------------------------------------------
+import base64
+import hmac
+import hashlib
+import time
+
+# Secret partagé (réutilise les secrets existants)
+SESSION_SECRET = (
+    "EVERSKILLS_SESSION_SECRET"
+)  # override possible via env/secret plus tard
+
+
+def _b64url_encode(b: bytes) -> str:
+    return base64.urlsafe_b64encode(b).decode("utf-8").rstrip("=")
+
+
+def _b64url_decode(s: str) -> bytes:
+    pad = "=" * (-len(s) % 4)
+    return base64.urlsafe_b64decode(s + pad)
+
+
+def issue_session_token(user: Dict[str, Any], ttl_seconds: int = 3600 * 8) -> str:
+    """
+    Create a signed session token.
+    Payload is minimal on purpose (no PII duplication).
+    """
+    payload = {
+        "email": _norm_email(user.get("email", "")),
+        "role": user.get("role"),
+        "exp": int(time.time()) + ttl_seconds,
+    }
+
+    payload_json = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    payload_b64 = _b64url_encode(payload_json)
+
+    sig = hmac.new(
+        SESSION_SECRET.encode("utf-8"),
+        payload_b64.encode("utf-8"),
+        hashlib.sha256,
+    ).digest()
+    sig_b64 = _b64url_encode(sig)
+
+    return f"{payload_b64}.{sig_b64}"
+
+
+def load_user_from_session_token(token: str) -> Optional[Dict[str, Any]]:
+    """
+    Validate token, check expiration, and rehydrate user from storage.
+    """
+    if not token or "." not in token:
+        return None
+
+    try:
+        payload_b64, sig_b64 = token.split(".", 1)
+
+        expected_sig = hmac.new(
+            SESSION_SECRET.encode("utf-8"),
+            payload_b64.encode("utf-8"),
+            hashlib.sha256,
+        ).digest()
+
+        if not hmac.compare_digest(_b64url_encode(expected_sig), sig_b64):
+            return None
+
+        payload = json.loads(_b64url_decode(payload_b64).decode("utf-8"))
+
+        if int(payload.get("exp", 0)) < int(time.time()):
+            return None
+
+        email = _norm_email(payload.get("email", ""))
+        if not email:
+            return None
+
+        # Always rehydrate from source of truth (no blind trust)
+        u = find_user(email)
+        if not u:
+            return None
+        if u.get("status") != "active":
+            return None
+
+        role = str(u.get("role") or "learner").strip()
+        if _is_super_admin_email(email):
+            role = "super_admin"
+
+        return {
+            "email": email,
+            "role": role,
+            "status": "active",
+            "first_name": str(u.get("first_name") or "").strip(),
+            "last_name": str(u.get("last_name") or "").strip(),
+        }
+
+    except Exception:
+        return None
 
 def ensure_demo_seed() -> None:
-    rows = load_access()
-    if rows:
-        return
+    # Seed only missing demo users (do not wipe existing access.json)
+    if not find_user("admin@everboarding.fr"):
+        create_user("admin@everboarding.fr", "super_admin", "demo1234", status="active", created_by="system", first_name="SuperAdmin")
 
-    create_user("admin@everboarding.fr", "admin", "demo1234", status="active", created_by="system", first_name="Admin")
-    create_user("contact@everboarding.fr", "coach", "demo1234", status="active", created_by="system", first_name="Coach")
-    create_user("nguyen.valery1@gmail.com", "learner", "demo1234", status="active", created_by="system", first_name="Valery")
+    if not find_user("contact@everboarding.fr"):
+        create_user("contact@everboarding.fr", "admin", "demo1234", status="active", created_by="system", first_name="Admin")
+
+    if not find_user("nguyen.valery1@gmail.com"):
+        create_user("nguyen.valery1@gmail.com", "learner", "demo1234", status="active", created_by="system", first_name="Valery")
+
+    if not find_user("6464aguilera@gmail.com"):
+        create_user("6464aguilera@gmail.com", "coach", "demo1234", status="active", created_by="system", first_name="Demo", last_name="Coach")
+
+
 
 
 def require_login(session_user: Optional[Dict[str, Any]]) -> Tuple[bool, str]:
