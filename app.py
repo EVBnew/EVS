@@ -46,9 +46,16 @@ except Exception:
 st.markdown(
     """
 <style>
+/* Hide Streamlit auto page nav (we use our own sidebar) */
 section[data-testid="stSidebarNav"] { display: none; }
+
+/* Layout */
 .block-container { max-width: 1200px; padding-top: 2.2rem; }
 div[data-testid="stTextInput"] input { border-radius: 10px; }
+
+/* Make columns stretch (login & signup cards same height) */
+div[data-testid="stHorizontalBlock"] { align-items: stretch; }
+div[data-testid="column"] > div { height: 100%; }
 
 /* Buttons (relief) */
 div[data-testid="stButton"] > button,
@@ -71,20 +78,21 @@ div[data-testid="stFormSubmitButton"] > button:active {
   box-shadow: 0 2px 6px rgba(0,0,0,0.12) !important;
 }
 
-/* Primary (blue) — apply to BOTH form submit + regular buttons */
-.evs-btn-primary div[data-testid="stFormSubmitButton"] > button,
-.evs-btn-primary div[data-testid="stButton"] > button {
-  background: linear-gradient(180deg, #2F80ED 0%, #1F6FE5 100%) !important;
-  color: #FFFFFF !important;
-  border: 1px solid rgba(31,111,229,0.40) !important;
-}
-
-/* Secondary (grey) — apply to BOTH form submit + regular buttons */
-.evs-btn-secondary div[data-testid="stFormSubmitButton"] > button,
-.evs-btn-secondary div[data-testid="stButton"] > button {
+/* Force filled Streamlit kinds */
+button[kind="secondary"],
+button[kind="secondary"]:hover,
+button[kind="secondary"]:active {
   background: linear-gradient(180deg, #F7F8FA 0%, #E9EDF3 100%) !important;
   color: #1F2A37 !important;
   border: 1px solid rgba(156,163,175,0.55) !important;
+}
+
+button[kind="primary"],
+button[kind="primary"]:hover,
+button[kind="primary"]:active {
+  background: linear-gradient(180deg, #2F80ED 0%, #1F6FE5 100%) !important;
+  color: #FFFFFF !important;
+  border: 1px solid rgba(31,111,229,0.40) !important;
 }
 </style>
 """,
@@ -172,8 +180,10 @@ with st.sidebar:
     st.divider()
     st.caption("Espaces opérationnels")
 
-    if r == "learner":
+    if r in ("learner", "super_admin"):
         st.page_link("pages/11_learner_space.py", label="Learner Space", icon="🎯")
+        st.page_link("pages/12_learner_program_chat.py", label="Learner Chat", icon="💬")
+
     if r in ("coach", "admin", "super_admin"):
         st.page_link("pages/10_coach_space.py", label="Coach Space", icon="🧠")
 
@@ -185,11 +195,12 @@ if h1:
 else:
     st.title("VOTRE LOGO")
 
-st.caption("Propulsé par EVERBOARDING · Upskilling Solutions")
+user = st.session_state.get("user")
+st.caption("Propulsé par EVERBOARDING · Upskilling Solutions ·")
 
 user = st.session_state.get("user")
 
-# ✅ FIX: Hide sidebar on Welcome when not logged (real CSS injection)
+# Hide sidebar on Welcome when not logged
 if not user:
     st.markdown(
         """
@@ -215,10 +226,10 @@ if user:
     st.success(f"Connecté : {user.get('email')} — rôle: {user.get('role')}")
     c1, c2 = st.columns(2)
     with c1:
-        if st.button("➡️ Ouvrir mon espace", use_container_width=True):
+        if st.button("➡️ Ouvrir mon espace", use_container_width=True, type="primary"):
             _route_user(user)
     with c2:
-        if st.button("🚪 Logout", use_container_width=True):
+        if st.button("🚪 Logout", use_container_width=True, type="secondary"):
             _logout()
             st.rerun()
     st.stop()
@@ -229,15 +240,13 @@ if user:
 def _reset_screen(token: str, email: str) -> None:
     st.subheader("Réinitialiser le mot de passe")
     with st.container(border=True):
-        with st.form("reset_form"):
-            em = st.text_input("Email", value=email or "", disabled=bool(email))
-            p1 = st.text_input("Nouveau mot de passe", type="password")
-            p2 = st.text_input("Confirmer", type="password")
-            st.markdown('<div class="evs-btn-primary">', unsafe_allow_html=True)
-            ok = st.form_submit_button("Enregistrer")
-            st.markdown("</div>", unsafe_allow_html=True)
+        em = st.text_input("Email", value=email or "", disabled=bool(email))
+        p1 = st.text_input("Nouveau mot de passe", type="password")
+        p2 = st.text_input("Confirmer", type="password")
 
-        if ok:
+        ok_submit = st.button("Enregistrer", type="primary", use_container_width=False)
+
+        if ok_submit:
             em2 = (em or "").strip().lower()
             if not em2 or "@" not in em2:
                 st.error("Email invalide.")
@@ -249,16 +258,13 @@ def _reset_screen(token: str, email: str) -> None:
                 st.error("Les mots de passe ne correspondent pas.")
                 st.stop()
 
-            # 1) validate token via Apps Script
             res = _call_apps_script("confirm_password_reset", {"email": em2, "token": token, "new_password": p1})
             if not res.get("ok"):
                 st.error("Lien invalide ou expiré.")
                 st.stop()
 
-            # 2) write new password hash into GSheet via wrapper
             new_hash = hash_password_pbkdf2(p1)
             api = get_gsheet_api()
-
             updates = {
                 "initial_password": new_hash,
                 "reset_token_hash": "",
@@ -276,7 +282,6 @@ def _reset_screen(token: str, email: str) -> None:
                 st.caption(str(getattr(upd, "error", "")))
                 st.stop()
 
-            # 3) login with new password
             u = authenticate(em2, p1)
             if not u:
                 st.success("Mot de passe mis à jour ✅")
@@ -285,7 +290,6 @@ def _reset_screen(token: str, email: str) -> None:
 
             st.session_state["user"] = u
             st.session_state["just_logged_in"] = True
-
             st.query_params.clear()
             st.rerun()
 
@@ -302,55 +306,43 @@ if "auth_mode" not in st.session_state:
 
 col_login, col_signup = st.columns([1.15, 1.0], gap="large")
 
+# --- LEFT: LOGIN
 with col_login:
     st.subheader("Accès")
     with st.container(border=True):
         if st.session_state["auth_mode"] == "reset_request":
             st.markdown("### Mot de passe oublié")
 
-            with st.form("reset_request_form", clear_on_submit=True):
-                email = st.text_input("Email")
-                st.markdown('<div class="evs-btn-primary">', unsafe_allow_html=True)
-                sent = st.form_submit_button("Envoyer le lien de réinitialisation")
-                st.markdown("</div>", unsafe_allow_html=True)
+            email_reset = st.text_input("Email", key="reset_email_input")
 
-            if sent:
-                em = (email or "").strip().lower()
+            if st.button("Envoyer le lien de réinitialisation", type="primary"):
+                em = (email_reset or "").strip().lower()
                 if not em or "@" not in em:
                     st.error("Email invalide.")
                     st.stop()
-
-                # IMPORTANT: Apps Script now uses APP_BASE_URL from Script Properties (safe),
-                # so no need to send app_base_url in payload.
                 _call_apps_script("request_password_reset", {"email": em})
-
                 st.success("Si un compte existe pour cet email, tu recevras un message.")
                 st.session_state["auth_mode"] = "login"
+                st.rerun()
 
-            # ✅ left side button in BLUE
-            st.markdown('<div class="evs-btn-primary">', unsafe_allow_html=True)
-            back = st.button("⬅️ Retour", use_container_width=True)
-            st.markdown("</div>", unsafe_allow_html=True)
-            if back:
+            if st.button("⬅️ Retour", type="secondary", use_container_width=True):
                 st.session_state["auth_mode"] = "login"
                 st.rerun()
 
         else:
             st.markdown("### Connexion")
-            with st.form("login_form"):
-                email = st.text_input("Email")
-                password = st.text_input("Mot de passe", type="password")
-                st.markdown('<div class="evs-btn-primary">', unsafe_allow_html=True)
-                submitted = st.form_submit_button("Connexion")
-                st.markdown("</div>", unsafe_allow_html=True)
 
-            # ✅ left side button in BLUE
-            st.markdown('<div class="evs-btn-primary">', unsafe_allow_html=True)
-            forgot = st.button("Mot de passe oublié ?", use_container_width=True)
-            st.markdown("</div>", unsafe_allow_html=True)
-            if forgot:
+            email = st.text_input("Email", key="login_email")
+            password = st.text_input("Mot de passe", type="password", key="login_password")
+
+            # (1) Connexion = GRIS
+            submitted = st.button("Connexion", type="secondary")
+
+            # Mot de passe oublié = GRIS
+            if st.button("Mot de passe oublié ?", type="secondary", use_container_width=True):
                 st.session_state["auth_mode"] = "reset_request"
                 st.rerun()
+
 
             if submitted:
                 u = authenticate((email or "").strip(), password or "")
@@ -362,20 +354,18 @@ with col_login:
                     st.success("Login OK ✅")
                     st.rerun()
 
+# --- RIGHT: SIGNUP
 with col_signup:
     with st.container(border=True):
         st.markdown("### Créer un compte")
         st.caption("Si tu n’as pas encore de mot de passe, fais une demande. L’admin te donnera tes accès.")
 
-        with st.form("signup_form", clear_on_submit=True):
-            first_name = st.text_input("Prénom")
-            last_name = st.text_input("Nom")
-            new_email = st.text_input("Email")
+        first_name = st.text_input("Prénom", key="signup_first_name")
+        last_name = st.text_input("Nom", key="signup_last_name")
+        new_email = st.text_input("Email", key="signup_email")
 
-            # ✅ right side submit stays GREY
-            st.markdown('<div class="evs-btn-secondary">', unsafe_allow_html=True)
-            create = st.form_submit_button("Envoyer ma demande d’accès")
-            st.markdown("</div>", unsafe_allow_html=True)
+        # (2) Demande d'accès = BLEU
+        create = st.button("Envoyer ma demande d’accès", type="primary")
 
         if create:
             fn = (first_name or "").strip()
@@ -421,3 +411,8 @@ with col_signup:
 
             st.success("Demande envoyée ✅")
             st.info(f"Tu recevras tes identifiants par email après validation par l’admin ({admin_email}).")
+
+            # optional: clear fields
+            for k in ["signup_first_name", "signup_last_name", "signup_email"]:
+                if k in st.session_state:
+                    st.session_state[k] = ""
