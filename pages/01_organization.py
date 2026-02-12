@@ -17,6 +17,9 @@ from everskills.services.access import (
     ROLES,
 )
 
+from everskills.services.guard import require_role
+
+
 st.set_page_config(page_title="Organization — EVERSKILLS", layout="wide")
 
 user = st.session_state.get("user")
@@ -32,6 +35,9 @@ st.markdown("# Organization")
 st.caption("People & accès (MVP).")
 
 people: List[Dict[str, Any]] = load_access()
+
+require_role({"coach","admin","super_admin"})
+
 
 # Read-only for non-admin roles
 is_admin = role in ADMIN_ROLES

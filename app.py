@@ -222,7 +222,7 @@ else:
     st.title("VOTRE LOGO")
 
 user = st.session_state.get("user")
-st.caption("Propulsé par EVERBOARDING · Upskilling Solutions ·")
+st.caption("Propulsé par EVERBOARDING · Upskilling Solutions")
 
 # Hide sidebar on Welcome when not logged
 if not user:

@@ -8,9 +8,12 @@ from everskills.services.gsheet_access import get_gsheet_api
 from everskills.services.passwords import generate_temp_password, hash_password_pbkdf2
 from everskills.services.mailer import send_email
 
+from everskills.services.guard import require_role
 
 
 st.set_page_config(page_title="EVERSKILLS - Admin approvals", page_icon="✅", layout="wide")
+
+require_role({"admin","super_admin"})
 
 
 def now_iso() -> str:

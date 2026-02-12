@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, timedelta
 import uuid
 
 import streamlit as st
@@ -13,8 +13,13 @@ from everskills.services.gsheet_programs import (
     add_comment,
     upsert_objective,
 )
+from everskills.services.guard import require_role
+
 
 st.set_page_config(page_title="Learner — Programme & Coach", page_icon="💬", layout="wide")
+
+# --- ROLE GUARD (anti accès direct URL)
+require_role({"learner", "super_admin"})
 
 
 def _norm(x) -> str:
@@ -39,10 +44,12 @@ def main() -> None:
     ok, msg = require_login(user)
     if not ok:
         st.error(msg)
+        st.info("Retourne sur Welcome (app) pour te connecter.")
         st.stop()
 
-    if _norm(user.get("role")) != "learner":
-        st.error("Accès réservé aux apprenants.")
+    if user.get("role") not in ("learner", "super_admin"):
+        st.warning("Cette page est réservée aux apprenants.")
+        st.info("Reviens à ton espace.")
         st.stop()
 
     learner_email = _norm(user.get("email")).lower()
@@ -73,6 +80,7 @@ def main() -> None:
         f"{_norm(p.get('title')) or 'Programme'} · {_norm(p.get('program_id'))} · {_norm(p.get('status'))}"
         for p in programs_sorted
     ]
+
     default_prog = _pick_active_program(programs_sorted)
     default_index = 0
     if default_prog:
@@ -81,7 +89,12 @@ def main() -> None:
                 default_index = i
                 break
 
-    sel = st.selectbox("📚 Mon programme", options=list(range(len(programs_sorted))), format_func=lambda i: labels[i], index=default_index)
+    sel = st.selectbox(
+        "📚 Mon programme",
+        options=list(range(len(programs_sorted))),
+        format_func=lambda i: labels[i],
+        index=default_index,
+    )
     program = programs_sorted[sel]
 
     org_id = _norm(program.get("org_id"))
@@ -110,6 +123,7 @@ def main() -> None:
             txt = _norm(o.get("objective_text"))
             status = _norm(o.get("status")).lower() or "todo"
             checked = status == "done"
+
             new_checked = st.checkbox(txt or f"Objectif {oid}", value=checked, key=f"obj_{oid}")
             if new_checked != checked:
                 new_status = "done" if new_checked else "todo"
@@ -133,6 +147,7 @@ def main() -> None:
         with st.form("add_objective", clear_on_submit=True):
             obj_text = st.text_input("Objectif")
             submit_obj = st.form_submit_button("Ajouter")
+
         if submit_obj:
             if not obj_text.strip():
                 st.warning("Objectif vide.")
@@ -175,8 +190,13 @@ def main() -> None:
             st.divider()
 
     with st.form("post_comment", clear_on_submit=True):
-        message = st.text_area("Nouveau message", height=120, placeholder=f"{first_name + ', ' if first_name else ''}écris ici…")
+        message = st.text_area(
+            "Nouveau message",
+            height=120,
+            placeholder=f"{first_name + ', ' if first_name else ''}écris ici…",
+        )
         send = st.form_submit_button("Envoyer")
+
     if send:
         if not message.strip():
             st.warning("Message vide.")
