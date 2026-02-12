@@ -1,8 +1,9 @@
-# pages/11_learner_space.py
+﻿# pages/11_learner_space.py
 from __future__ import annotations
 
 from typing import Any, Dict, List
 import uuid
+
 import streamlit as st
 
 from everskills.services.access import require_login, change_password
@@ -13,8 +14,15 @@ from everskills.services.storage import (
     save_campaigns,
     now_iso,
 )
+from everskills.services.guard import require_role
+
+# CR11: email events (idempotent)
+from everskills.services.mail_send_once import send_once
 
 st.set_page_config(page_title="Learner Space — EVERSKILLS", layout="wide")
+
+# --- ROLE GUARD (anti accès direct URL)
+require_role({"learner", "super_admin"})
 
 # ----------------------------
 # Auth
@@ -26,9 +34,9 @@ if not ok:
     st.info("Retourne sur Welcome (app) pour te connecter.")
     st.stop()
 
-if user.get("role") != "learner":
-    st.warning("Accès réservé aux apprenants.")
-    st.info("Passe par Projects pour être routé correctement.")
+if user.get("role") not in ("learner", "super_admin"):
+    st.warning("Cette page est réservée aux apprenants.")
+    st.info("Reviens à ton espace.")
     st.stop()
 
 # ----------------------------
@@ -68,6 +76,17 @@ def _as_list(x: Any) -> List[Any]:
 
 def _norm_email(s: str) -> str:
     return (s or "").strip().lower()
+
+
+def _admin_rh_email() -> str:
+    # DEMO: route toujours vers l’Admin RH (contact@) si le secret est absent / vide
+    v = str(st.secrets.get("ADMIN_EMAIL") or "").strip()
+    if v:
+        return v
+    v = str(st.secrets.get("ACCESS_ADMIN_EMAIL") or "").strip()
+    if v:
+        return v
+    return "contact@everboarding.fr"
 
 
 ACTION_STATUSES = [
@@ -193,17 +212,30 @@ with t1:
     st.subheader("📝 Soumettre une demande")
 
     with st.form("learner_request_form", clear_on_submit=False):
-        objective = st.text_input("Objectif", placeholder="Ex: gagner en assertivité en réunion")
+        objective = st.text_input(
+            "Objectif",
+            placeholder="Ex: gagner en assertivité en réunion",
+            max_chars=200,
+        )
+
         context = st.text_area(
             "Contexte",
             height=120,
             placeholder="Décris la situation, ce que tu veux changer, la contrainte, etc.",
         )
-        weeks = st.number_input("Durée (semaines)", min_value=1, max_value=12, value=3, step=1)
+
+        weeks = st.number_input(
+            "Durée (semaines)",
+            min_value=1,
+            max_value=8,
+            value=3,
+            step=1,
+        )
+
         submitted = st.form_submit_button("📨 Envoyer la demande")
 
     if submitted:
-        if not objective.strip():
+        if not (objective or "").strip():
             st.error("Objectif obligatoire.")
         else:
             requests = load_requests() or []
@@ -214,15 +246,41 @@ with t1:
                 "id": rid,
                 "ts": now_iso(),
                 "email": learner_email,
-                "objective": objective.strip(),
-                "context": context.strip(),
+                "objective": (objective or "").strip(),
+                "context": (context or "").strip(),
                 "weeks": int(weeks),
                 "supports": [],
                 "status": "submitted",
             }
             requests.append(req)
+
+            # ✅ FIX #1: persist request
             save_requests(requests)
-            st.success("Demande envoyée ✅ (visible côté Coach).")
+
+            # #0 mail -> Admin RH
+            admin_to = _admin_rh_email().strip().lower()
+            event_key = f"REQUEST_SUBMITTED:{rid}"
+
+            if not admin_to:
+                st.error("ADMIN_EMAIL / ACCESS_ADMIN_EMAIL manquant dans secrets.")
+            else:
+                send_once(
+                    event_key=event_key,
+                    event_type="REQUEST_SUBMITTED",
+                    request_id=rid,
+                    to_email=admin_to,
+                    subject=f"[EVERSKILLS] Nouvelle demande ({rid})",
+                    text_body=(
+                        "Une nouvelle demande learner a été soumise.\n\n"
+                        f"Learner: {learner_email}\n"
+                        f"Objectif: {(objective or '').strip()}\n"
+                        f"Durée: {int(weeks)} semaine(s)\n\n"
+                        "Ouvre Admin RH Space pour l’assigner à un coach."
+                    ),
+                    meta={"learner_email": learner_email, "admin_email": admin_to},
+                )
+
+                st.success("Demande envoyée ✅ (visible côté Admin RH).")
 
     st.divider()
     st.caption("Tes dernières demandes")
@@ -282,14 +340,15 @@ with t2:
             st.markdown("### 💬 Message du coach")
             st.success(kickoff)
 
-        if str(camp.get("status") or "").strip() == "closed":
-            closing = str(camp.get("closure_message") or "").strip()
+        closing = str(camp.get("closure_message") or "").strip()
+        if closing:
             st.divider()
             st.markdown("### 🏁 Message de clôture")
-            if closing:
-                st.success(closing)
-            else:
-                st.info("Campagne clôturée. (Message de clôture non renseigné.)")
+            st.success(closing)
+        elif str(camp.get("status") or "").strip() == "closed":
+            st.divider()
+            st.markdown("### 🏁 Message de clôture")
+            st.info("Campagne clôturée. (Message de clôture non renseigné.)")
 
         st.divider()
         st.markdown("### Programme (coach)")
@@ -308,6 +367,31 @@ with t2:
                 camp["updated_at"] = now
                 campaigns = _upsert_campaign(campaigns, camp)
                 save_campaigns(campaigns)
+
+                cid = str(camp.get("id") or "").strip()
+                coach_email = str(camp.get("coach_email") or "").strip().lower() or "admin@everboarding.fr"
+                kickoff_txt = str(camp.get("kickoff_message") or "").strip()
+
+                send_once(
+                    event_key=f"PROGRAM_VALIDATED:{cid}",
+                    event_type="PROGRAM_VALIDATED",
+                    request_id=cid,
+                    to_email=coach_email,
+                    subject=f"[EVERSKILLS] Programme validé ({cid})",
+                    text_body=f"Le learner {learner_email} a validé le programme.\n\nCampagne: {cid}",
+                    meta={"camp_id": cid, "learner_email": learner_email, "coach_email": coach_email},
+                )
+
+                send_once(
+                    event_key=f"PROGRAM_STARTED:{cid}",
+                    event_type="PROGRAM_STARTED",
+                    request_id=cid,
+                    to_email=learner_email,
+                    subject=f"[EVERSKILLS] Démarrage officiel ({cid})",
+                    text_body=kickoff_txt or "Ton programme démarre officiellement.",
+                    meta={"camp_id": cid},
+                )
+
                 st.success("Campagne démarrée ✅")
                 st.rerun()
 
@@ -394,5 +478,18 @@ with t2:
 
                         campaigns = _upsert_campaign(campaigns, camp)
                         save_campaigns(campaigns)
+
+                        cid = str(camp.get("id") or "").strip()
+                        coach_email = str(camp.get("coach_email") or "").strip().lower() or "admin@everboarding.fr"
+                        send_once(
+                            event_key=f"LEARNER_UPDATE:{cid}:{week_n}:{now}",
+                            event_type="LEARNER_UPDATE",
+                            request_id=cid,
+                            to_email=coach_email,
+                            subject=f"[EVERSKILLS] Update semaine {week_n} ({cid})",
+                            text_body=f"Update learner (semaine {week_n}).\n\nLearner: {learner_email}\n\n{comment}",
+                            meta={"camp_id": cid, "week": week_n, "learner_email": learner_email},
+                        )
+
                         st.success("OK ✅")
                         st.rerun()

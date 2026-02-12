@@ -15,8 +15,16 @@ from everskills.services.storage import (
     update_request,
     now_iso,
 )
+from everskills.services.guard import require_role
+
+# CR11: email events (idempotent)
+from everskills.services.mail_send_once import send_once
+
 
 st.set_page_config(page_title="Coach Space — EVERSKILLS", layout="wide")
+
+require_role({"coach", "super_admin"})
+
 
 # ----------------------------
 # Auth
@@ -37,14 +45,21 @@ coach_email = (user.get("email") or "").strip().lower()
 # ----------------------------
 # Helpers
 # ----------------------------
+def _norm_email(s: str) -> str:
+    return (s or "").strip().lower()
+
+
 def _sort_key_req(req: Dict[str, Any]) -> str:
     return str(req.get("ts") or req.get("created_at") or "")
+
 
 def _req_status(req: Dict[str, Any]) -> str:
     return (req.get("status") or "submitted").strip()
 
+
 def _camp_status(camp: Dict[str, Any]) -> str:
     return (camp.get("status") or "").strip()
+
 
 def _label_req(req: Dict[str, Any]) -> str:
     rid = str(req.get("id") or "").strip()
@@ -52,12 +67,14 @@ def _label_req(req: Dict[str, Any]) -> str:
     obj = (req.get("objective") or "").strip()
     return f"{email} — {_req_status(req)} — {rid} — {obj[:60]}"
 
+
 def _label_camp(c: Dict[str, Any]) -> str:
     cid = c.get("id", "camp")
     email = c.get("learner_email", "unknown")
     status = _camp_status(c)
     obj = c.get("objective", "")
     return f"{email} — {status} — {cid} — {obj[:60]}"
+
 
 def _append_event(
     camp: Dict[str, Any],
@@ -71,6 +88,7 @@ def _append_event(
     events.append({"ts": now_iso(), "actor": actor, "type": event_type, "payload": payload or {}})
     camp["events"] = events
 
+
 def _find_campaign_by_request_id(campaigns: List[Dict[str, Any]], request_id: str) -> Optional[Dict[str, Any]]:
     for c in campaigns:
         if not isinstance(c, dict):
@@ -78,6 +96,7 @@ def _find_campaign_by_request_id(campaigns: List[Dict[str, Any]], request_id: st
         if str(c.get("request_id") or "").strip() == request_id:
             return c
     return None
+
 
 def _save_campaign_in_list(campaigns: List[Dict[str, Any]], camp: Dict[str, Any]) -> None:
     cid = str(camp.get("id") or "").strip()
@@ -93,12 +112,14 @@ def _save_campaign_in_list(campaigns: List[Dict[str, Any]], camp: Dict[str, Any]
         campaigns.append(camp)
     save_campaigns(campaigns)
 
+
 ACTION_STATUSES = [
     ("not_started", "🔴 Pas fait"),
     ("partial", "🟡 Partiel"),
     ("done", "🟢 Fait"),
 ]
 ACTION_LABEL = {k: v for k, v in ACTION_STATUSES}
+
 
 def _compute_week_completion(week: Dict[str, Any]) -> Tuple[int, int, float]:
     actions = week.get("actions") or []
@@ -118,6 +139,7 @@ def _compute_week_completion(week: Dict[str, Any]) -> Tuple[int, int, float]:
     pct = (done / total * 100.0) if total > 0 else 0.0
     return done, total, pct
 
+
 def _compute_global_completion(camp: Dict[str, Any]) -> Tuple[int, int, float]:
     wp = camp.get("weekly_plan") or []
     if not isinstance(wp, list):
@@ -132,6 +154,7 @@ def _compute_global_completion(camp: Dict[str, Any]) -> Tuple[int, int, float]:
         total_total += t
     pct = (done_total / total_total * 100.0) if total_total > 0 else 0.0
     return done_total, total_total, pct
+
 
 def _ensure_weekly_plan(camp: Dict[str, Any]) -> Dict[str, Any]:
     try:
@@ -181,15 +204,16 @@ def _ensure_weekly_plan(camp: Dict[str, Any]) -> Dict[str, Any]:
 
     camp["weekly_plan"] = norm
     camp["kickoff_message"] = str(camp.get("kickoff_message") or "").strip()
-    # IMPORTANT: one single name for closure message
     camp["closure_message"] = str(camp.get("closure_message") or "").strip()
     return camp
+
 
 # ----------------------------
 # program_text -> weekly_plan sync
 # ----------------------------
 def _hash_text(s: str) -> str:
     return hashlib.md5((s or "").encode("utf-8")).hexdigest()
+
 
 def _clean_md_line(line: str) -> str:
     s = (line or "").strip()
@@ -198,6 +222,7 @@ def _clean_md_line(line: str) -> str:
     s = re.sub(r"^\*{1,3}\s*(.*?)\s*\*{1,3}$", r"\1", s)
     s = re.sub(r"^_{1,3}\s*(.*?)\s*_{1,3}$", r"\1", s)
     return s.strip()
+
 
 def _extract_week_sections(program_text: str) -> Dict[int, List[str]]:
     text = (program_text or "").strip()
@@ -228,6 +253,7 @@ def _extract_week_sections(program_text: str) -> Dict[int, List[str]]:
         if current_week is not None:
             sections[current_week].append(line)
     return sections
+
 
 def _pick_objective_and_actions(lines: List[str]) -> Tuple[str, List[str]]:
     clean = [_clean_md_line(ln) for ln in (lines or [])]
@@ -271,6 +297,7 @@ def _pick_objective_and_actions(lines: List[str]) -> Tuple[str, List[str]]:
     actions = [a for a in actions if a]
     return obj.strip(), actions[:3]
 
+
 def _week_needs_fill(w: Dict[str, Any]) -> bool:
     obj = str(w.get("objective_week") or "").strip()
     actions = w.get("actions") or []
@@ -278,6 +305,7 @@ def _week_needs_fill(w: Dict[str, Any]) -> bool:
         actions = []
     has_action = any(isinstance(a, dict) and str(a.get("text") or "").strip() for a in actions)
     return (not obj) or (not has_action)
+
 
 def _sync_weekly_plan_from_program(camp: Dict[str, Any]) -> Tuple[Dict[str, Any], bool]:
     program_text = str(camp.get("program_text") or "").strip()
@@ -333,6 +361,7 @@ def _sync_weekly_plan_from_program(camp: Dict[str, Any]) -> Tuple[Dict[str, Any]
     camp["weekly_init_program_hash"] = prog_hash
     return camp, changed
 
+
 # ----------------------------
 # OpenAI
 # ----------------------------
@@ -348,6 +377,7 @@ def _get_openai_client():
         return OpenAI(api_key=api_key)
     except Exception:
         return None
+
 
 def _build_program_prompt(objective: str, context: str, weeks: int) -> str:
     return f"""
@@ -372,11 +402,13 @@ Contraintes :
 Réponds en texte clair (pas de JSON).
 """.strip()
 
+
 def _first_name_from_access(email: str) -> str:
     u = find_user(email or "")
     if not u:
         return ""
     return str(u.get("first_name") or "").strip()
+
 
 def _kickoff_template(learner_first: str, weeks: int, coach_first: str) -> str:
     lf = learner_first or ""
@@ -397,6 +429,7 @@ def _kickoff_template(learner_first: str, weeks: int, coach_first: str) -> str:
         f"A bientôt.\n\n{cf}"
     )
 
+
 def _closure_template(learner_first: str, objective: str, weeks: int, coach_first: str) -> str:
     lf = learner_first or ""
     cf = coach_first or "Ton coach"
@@ -413,6 +446,7 @@ def _closure_template(learner_first: str, objective: str, weeks: int, coach_firs
         f"{lf + ',' if lf else ''} à nouveau, ça a été un vrai plaisir de faire ce chemin ensemble.\n\n"
         f"Au plaisir de nous revoir et d'échanger.\n\n{cf}"
     )
+
 
 # ----------------------------
 # UI
@@ -517,7 +551,6 @@ with col_mid:
         existing_text = (selected_camp.get("program_text") or "").strip()
         cid = str(selected_camp.get("id") or "").strip()
 
-        # Reset draft when campaign changes
         if st.session_state.get("_draft_cid") != cid:
             st.session_state["_draft_cid"] = cid
             st.session_state["program_draft"] = existing_text
@@ -576,17 +609,13 @@ with col_mid:
         with c1:
             if st.button("💾 Enregistrer le programme", use_container_width=True):
                 selected_camp["program_text"] = program_text
-
-                # Sync weekly_plan on save
                 selected_camp, changed = _sync_weekly_plan_from_program(selected_camp)
 
                 selected_camp["updated_at"] = now_iso()
                 _append_event(selected_camp, "program_saved", actor="coach", payload={"weekly_synced": bool(changed)})
                 _save_campaign_in_list(campaigns, selected_camp)
 
-                # keep draft aligned
                 st.session_state["program_draft"] = program_text
-
                 st.success("OK ✅ (programme enregistré + plan hebdo synchronisé)")
                 st.rerun()
 
@@ -603,6 +632,24 @@ with col_mid:
 
                 if selected_req:
                     update_request(str(selected_req.get("id")), {"status": "archived", "updated_at": now_iso()})
+
+                learner_to = _norm_email(str(selected_camp.get("learner_email") or ""))
+                prog_hash = _hash_text(program_text)
+                event_key = f"PROGRAM_PUBLISHED:{cid}:{prog_hash}"
+                send_once(
+                    event_key=event_key,
+                    event_type="PROGRAM_PUBLISHED",
+                    request_id=cid,
+                    to_email=learner_to,
+                    subject=f"[EVERSKILLS] Programme prêt ({cid})",
+                    text_body=(
+                        "Ton coach a publié ton programme.\n\n"
+                        "Connecte-toi à EVERSKILLS (Learner Space > Mon plan) pour le consulter "
+                        "et confirmer le démarrage.\n\n"
+                        f"Campagne: {cid}\n"
+                    ),
+                    meta={"camp_id": cid, "learner_email": learner_to, "coach_email": coach_email},
+                )
 
                 st.session_state["program_draft"] = program_text
                 st.success("Publié ✅")
@@ -631,11 +678,11 @@ with col_mid:
                 st.rerun()
         with kc2:
             if st.button("✨ Auto-générer (template)", use_container_width=True):
-                learner_email = str(selected_camp.get("learner_email") or "").strip().lower()
-                learner_first = _first_name_from_access(learner_email)
+                learner_email2 = _norm_email(str(selected_camp.get("learner_email") or ""))
+                learner_first = _first_name_from_access(learner_email2)
                 coach_first = str(user.get("first_name") or "").strip()
-                weeks = int(selected_camp.get("weeks") or 3)
-                selected_camp["kickoff_message"] = _kickoff_template(learner_first, weeks, coach_first).strip()
+                weeks2 = int(selected_camp.get("weeks") or 3)
+                selected_camp["kickoff_message"] = _kickoff_template(learner_first, weeks2, coach_first).strip()
                 selected_camp["updated_at"] = now_iso()
                 _append_event(selected_camp, "kickoff_autofill", actor="coach")
                 _save_campaign_in_list(campaigns, selected_camp)
@@ -717,6 +764,26 @@ with col_mid:
                         selected_camp["updated_at"] = now
                         _append_event(selected_camp, "coach_week_saved", actor="coach", payload={"week": week_n})
                         _save_campaign_in_list(campaigns, selected_camp)
+
+                        # ✅ CR11 #4b: mail learner sur update coach
+                        learner_to = _norm_email(str(selected_camp.get("learner_email") or ""))
+                        coach_from = _norm_email(str(selected_camp.get("coach_email") or coach_email))
+                        camp_id = _norm_email(str(selected_camp.get("id") or ""))
+                        send_once(
+                            event_key=f"COACH_UPDATE:{camp_id}:{week_n}:{now}",
+                            event_type="COACH_UPDATE",
+                            request_id=camp_id,
+                            to_email=learner_to,
+                            subject=f"[EVERSKILLS] Retour coach semaine {week_n} ({camp_id})",
+                            text_body=(
+                                f"Ton coach a répondu sur ta semaine {week_n}.\n\n"
+                                f"Campagne: {camp_id}\n"
+                                f"Coach: {coach_from}\n\n"
+                                f"{coach_comment.strip() or '(pas de message)'}"
+                            ),
+                            meta={"camp_id": camp_id, "week": week_n, "learner_email": learner_to, "coach_email": coach_from},
+                        )
+
                         st.success("OK ✅")
                         st.rerun()
 
@@ -726,12 +793,12 @@ with col_right:
     if selected_req and not selected_camp:
         if st.button("✅ Créer campagne (draft)", use_container_width=True):
             rid = str(selected_req.get("id") or "").strip()
-            learner_email = (selected_req.get("email") or "").strip().lower()
+            learner_email3 = _norm_email(str(selected_req.get("email") or ""))
 
             camp = {
                 "id": f"camp_{rid}",
                 "request_id": rid,
-                "learner_email": learner_email,
+                "learner_email": learner_email3,
                 "coach_email": coach_email,
                 "objective": (selected_req.get("objective") or "").strip(),
                 "context": (selected_req.get("context") or "").strip(),
@@ -769,15 +836,15 @@ with col_right:
 
         with c2:
             if st.button("✅ Clôturer (closed)", use_container_width=True):
-                learner_email = str(selected_camp.get("learner_email") or "").strip().lower()
-                learner_first = _first_name_from_access(learner_email)
+                learner_email4 = _norm_email(str(selected_camp.get("learner_email") or ""))
+                learner_first = _first_name_from_access(learner_email4)
                 coach_first = str(user.get("first_name") or "").strip()
-                weeks = int(selected_camp.get("weeks") or 3)
-                objective = str(selected_camp.get("objective") or "").strip()
+                weeks4 = int(selected_camp.get("weeks") or 3)
+                objective4 = str(selected_camp.get("objective") or "").strip()
 
                 if not str(selected_camp.get("closure_message") or "").strip():
                     selected_camp["closure_message"] = _closure_template(
-                        learner_first, objective, weeks, coach_first
+                        learner_first, objective4, weeks4, coach_first
                     ).strip()
 
                 selected_camp["status"] = "closed"
@@ -785,7 +852,21 @@ with col_right:
                 selected_camp["updated_at"] = now_iso()
                 _append_event(selected_camp, "campaign_closed", actor="coach")
                 _save_campaign_in_list(campaigns, selected_camp)
-                st.success("Clôturé ✅ (message de clôture prêt)")
+
+                # ✅ CR11 #5: mail learner sur clôture
+                camp_id2 = str(selected_camp.get("id") or "").strip()
+                send_once(
+                    event_key=f"CAMPAIGN_CLOSED:{camp_id2}",
+                    event_type="CAMPAIGN_CLOSED",
+                    request_id=camp_id2,
+                    to_email=learner_email4,
+                    subject=f"[EVERSKILLS] Campagne clôturée ({camp_id2})",
+                    text_body=str(selected_camp.get("closure_message") or "").strip()
+                    or "Ta campagne est clôturée. Bravo pour le chemin parcouru !",
+                    meta={"camp_id": camp_id2, "learner_email": learner_email4, "coach_email": coach_email},
+                )
+
+                st.success("Clôturé ✅ (message de clôture prêt + email envoyé)")
                 st.rerun()
 
         st.divider()
@@ -811,13 +892,13 @@ with col_right:
                 st.rerun()
         with cc2:
             if st.button("✨ Auto-générer (template clôture)", use_container_width=True):
-                learner_email = str(selected_camp.get("learner_email") or "").strip().lower()
-                learner_first = _first_name_from_access(learner_email)
+                learner_email5 = _norm_email(str(selected_camp.get("learner_email") or ""))
+                learner_first = _first_name_from_access(learner_email5)
                 coach_first = str(user.get("first_name") or "").strip()
-                weeks = int(selected_camp.get("weeks") or 3)
-                objective = str(selected_camp.get("objective") or "").strip()
+                weeks5 = int(selected_camp.get("weeks") or 3)
+                objective5 = str(selected_camp.get("objective") or "").strip()
                 selected_camp["closure_message"] = _closure_template(
-                    learner_first, objective, weeks, coach_first
+                    learner_first, objective5, weeks5, coach_first
                 ).strip()
                 selected_camp["updated_at"] = now_iso()
                 _append_event(selected_camp, "closure_autofill", actor="coach")
