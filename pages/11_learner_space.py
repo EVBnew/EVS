@@ -41,7 +41,6 @@ if user.get("role") not in ("learner", "super_admin"):
 
 # ----------------------------
 # CR-04 — Sécurité du compte
-# (DOIT être avant tout st.stop métier)
 # ----------------------------
 st.divider()
 st.markdown("### 🔐 Sécurité du compte")
@@ -79,7 +78,12 @@ def _norm_email(s: str) -> str:
 
 
 def _admin_rh_email() -> str:
-    # DEMO: route toujours vers l’Admin RH (contact@) si le secret est absent / vide
+    """
+    Routing #0:
+    - ADMIN_EMAIL (prioritaire)
+    - ACCESS_ADMIN_EMAIL (fallback)
+    - hard fallback: contact@
+    """
     v = str(st.secrets.get("ADMIN_EMAIL") or "").strip()
     if v:
         return v
@@ -253,16 +257,13 @@ with t1:
                 "status": "submitted",
             }
             requests.append(req)
-
-            # ✅ FIX #1: persist request
             save_requests(requests)
 
-            # #0 mail -> Admin RH
             admin_to = _admin_rh_email().strip().lower()
             event_key = f"REQUEST_SUBMITTED:{rid}"
 
             if not admin_to:
-                st.error("ADMIN_EMAIL / ACCESS_ADMIN_EMAIL manquant dans secrets.")
+                st.error("ADMIN_EMAIL / ACCESS_ADMIN_EMAIL manquant.")
             else:
                 send_once(
                     event_key=event_key,
@@ -280,7 +281,7 @@ with t1:
                     meta={"learner_email": learner_email, "admin_email": admin_to},
                 )
 
-                st.success("Demande envoyée ✅ (visible côté Admin RH).")
+                st.success(f"Demande envoyée ✅ (destinataire: {admin_to})")
 
     st.divider()
     st.caption("Tes dernières demandes")
