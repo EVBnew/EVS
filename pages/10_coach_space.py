@@ -23,8 +23,6 @@ from everskills.services.mail_send_once import send_once
 
 st.set_page_config(page_title="Coach Space — EVERSKILLS", layout="wide")
 
-require_role({"coach", "super_admin"})
-
 
 # ----------------------------
 # Auth
@@ -36,11 +34,14 @@ if not ok:
     st.info("Retourne sur Welcome (app) pour te connecter.")
     st.stop()
 
+require_role({"coach", "super_admin"})
+
 if user.get("role") not in ("coach", "admin", "super_admin"):
     st.warning("Accès réservé aux coachs / admins.")
     st.stop()
 
 coach_email = (user.get("email") or "").strip().lower()
+
 
 # ----------------------------
 # Helpers
@@ -65,7 +66,10 @@ def _label_req(req: Dict[str, Any]) -> str:
     rid = str(req.get("id") or "").strip()
     email = (req.get("email") or "unknown").strip()
     obj = (req.get("objective") or "").strip()
-    return f"{email} — {_req_status(req)} — {rid} — {obj[:60]}"
+    stt = _req_status(req)
+    assigned = _norm_email(str(req.get("assigned_coach_email") or ""))
+    suffix = f" — assigné: {assigned}" if assigned else ""
+    return f"{email} — {stt} — {rid} — {obj[:60]}{suffix}"
 
 
 def _label_camp(c: Dict[str, Any]) -> str:
@@ -451,7 +455,7 @@ def _closure_template(learner_first: str, objective: str, weeks: int, coach_firs
 # ----------------------------
 # UI
 # ----------------------------
-st.title("🧠 Coach Space")
+st.title("Coach Space")
 st.caption("Demandes → campagnes → programme → suivi → clôture.")
 
 requests_raw: List[Dict[str, Any]] = load_requests() or []
@@ -493,12 +497,22 @@ with col_left:
     st.session_state["coach_view"] = view
 
     if view == "Demandes":
-        submitted = [r for r in requests_sorted if _req_status(r) == "submitted"]
-        if not submitted:
-            st.info("Aucune demande submitted.")
+        # ✅ FIX: afficher submitted + (assigned/in_progress) assignées à CE coach
+        visible = []
+        for r in requests_sorted:
+            stt = _req_status(r)
+            if stt == "submitted":
+                visible.append(r)
+                continue
+            if stt in ("assigned", "in_progress"):
+                if _norm_email(str(r.get("assigned_coach_email") or "")) == coach_email:
+                    visible.append(r)
+
+        if not visible:
+            st.info("Aucune demande (submitted ou assignée à toi).")
         else:
-            options = [str(r.get("id") or "").strip() for r in submitted]
-            labels = {str(r.get("id") or "").strip(): _label_req(r) for r in submitted}
+            options = [str(r.get("id") or "").strip() for r in visible]
+            labels = {str(r.get("id") or "").strip(): _label_req(r) for r in visible}
             default = st.session_state.get("selected_req_id", "")
             idx = options.index(default) if default in options else 0
             rid = st.selectbox("Demande", options=options, index=idx, format_func=lambda x: labels.get(x, x))
@@ -544,6 +558,7 @@ with col_mid:
             st.write(f"**Contexte :** {selected_req.get('context','')}")
             st.write(f"**Semaines :** {selected_req.get('weeks', 3)}")
             st.write(f"**Statut request :** `{_req_status(selected_req)}`")
+            st.write(f"**Assigné à :** `{_norm_email(str(selected_req.get('assigned_coach_email') or '')) or '-'}`")
 
     if not selected_camp:
         st.info("Aucune campagne liée. ➜ Crée-la dans la colonne de droite.")
@@ -768,7 +783,7 @@ with col_mid:
                         # ✅ CR11 #4b: mail learner sur update coach
                         learner_to = _norm_email(str(selected_camp.get("learner_email") or ""))
                         coach_from = _norm_email(str(selected_camp.get("coach_email") or coach_email))
-                        camp_id = _norm_email(str(selected_camp.get("id") or ""))
+                        camp_id = str(selected_camp.get("id") or "").strip()
                         send_once(
                             event_key=f"COACH_UPDATE:{camp_id}:{week_n}:{now}",
                             event_type="COACH_UPDATE",

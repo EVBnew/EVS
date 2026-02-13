@@ -15,10 +15,6 @@ from everskills.services.mail_send_once import send_once
 
 st.set_page_config(page_title="Admin RH — EVERSKILLS", layout="wide")
 
-# Admin RH (client) + Super Admin (plateforme) peuvent accéder
-require_role({"admin", "super_admin"})
-
-
 # ----------------------------
 # Auth
 # ----------------------------
@@ -28,6 +24,9 @@ if not ok:
     st.error(msg)
     st.info("Retourne sur Welcome (app) pour te connecter.")
     st.stop()
+
+# Admin RH (client) + Super Admin (plateforme) peuvent accéder
+require_role({"admin", "super_admin"})
 
 role = str(user.get("role") or "").strip()
 if role not in ("admin", "super_admin"):
@@ -62,6 +61,9 @@ def _safe_requests() -> List[Dict[str, Any]]:
         if "updated_at" not in r:
             r["updated_at"] = ""
             changed = True
+        if "status" not in r:
+            r["status"] = "submitted"
+            changed = True
 
     if changed:
         save_requests(reqs)
@@ -70,7 +72,7 @@ def _safe_requests() -> List[Dict[str, Any]]:
 
 
 def _sort_key_req(r: Dict[str, Any]) -> str:
-    return str(r.get("ts") or "")
+    return str(r.get("ts") or r.get("created_at") or "")
 
 
 def _label_req(r: Dict[str, Any]) -> str:
@@ -151,7 +153,7 @@ with tabs[0]:
                 coach_email = st.text_input(
                     "Email du coach",
                     value=default_coach,
-                    placeholder="ex: 6464aguilera@gmail.com",
+                    placeholder="ex: coach@entreprise.com",
                 )
                 send_mail = st.checkbox("Envoyer l’email au coach", value=True)
                 do_assign = st.form_submit_button("✅ Assigner")
