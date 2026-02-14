@@ -505,121 +505,146 @@ with t2:
                         st.markdown("**Retour coach**")
                         st.info(coach_comment)
 
-                    # -----------------------------
-                    # CR12 — Post-it dans Weekly (semaine courante)
-                    # -----------------------------
-                    if week_n == current_week and str(camp.get("status") or "").strip() in ("active", "coach_validated"):
-                        st.divider()
-                        st.markdown("### 🟨 Post-it (Journal)")
+  # -----------------------------
+# CR12 — Post-it dans Weekly (semaine courante)
+# -----------------------------
+if week_n == current_week and str(camp.get("status") or "").strip() in ("active", "coach_validated"):
+    st.divider()
+    st.markdown("### 🟨 Post-it (Journal)")
 
-                        mood = st.selectbox(
-                            "Énergie du jour",
-                            options=[
-                                "🟢 En confiance",
-                                "🔵 Flow",
-                                "🟡 Neutre",
-                                "🟠 Tendu",
-                                "🔴 Fatigué",
-                            ],
-                            index=2,
-                            key=f"postit_mood_{camp.get('id')}_{week_n}",
-                        )
+    mood = st.selectbox(
+        "Énergie du jour",
+        options=["🟢 En confiance", "🔵 Flow", "🟡 Neutre", "🟠 Tendu", "🔴 Fatigué"],
+        index=2,
+        key=f"postit_mood_{camp.get('id')}_{week_n}",
+    )
 
-                        c1, c2 = st.columns(2)
-                        with c1:
-                            ps_success = st.text_area("Succès", height=80, key=f"postit_success_{camp.get('id')}_{week_n}")
-                        with c2:
-                            ps_difficulty = st.text_area(
-                                "Difficulté", height=80, key=f"postit_difficulty_{camp.get('id')}_{week_n}"
-                            )
-                        ps_learning = st.text_area("Apprentissage", height=80, key=f"postit_learning_{camp.get('id')}_{week_n}")
-                        ps_tags = st.text_input("Tags (virgules)", key=f"postit_tags_{camp.get('id')}_{week_n}")
+    c1, c2 = st.columns(2)
+    with c1:
+        ps_success = st.text_area("Succès", height=80, key=f"postit_success_{camp.get('id')}_{week_n}")
+    with c2:
+        ps_difficulty = st.text_area("Difficulté", height=80, key=f"postit_difficulty_{camp.get('id')}_{week_n}")
 
-                        share_with_coach = st.toggle(
-                            "Partager avec mon coach",
-                            value=False,
-                            key=f"postit_share_{camp.get('id')}_{week_n}",
-                        )
-                        coach_email_default = str(camp.get("coach_email") or "").strip().lower() or str(
-                            st.session_state.get("evs_coach_email") or ""
-                        ).strip().lower()
-                        coach_email_for_share = st.text_input(
-                            "Email coach",
-                            value=coach_email_default,
-                            disabled=not share_with_coach,
-                            key=f"postit_coach_{camp.get('id')}_{week_n}",
-                        )
+    ps_learning = st.text_area("Apprentissage", height=80, key=f"postit_learning_{camp.get('id')}_{week_n}")
+    ps_tags = st.text_input("Tags (virgules)", key=f"postit_tags_{camp.get('id')}_{week_n}")
 
-                        insert_into_weekly = st.toggle(
-                            "Insérer aussi dans mon commentaire hebdo",
-                            value=True,
-                            key=f"postit_inject_{camp.get('id')}_{week_n}",
-                        )
+    share_with_coach = st.toggle(
+        "Partager avec mon coach",
+        value=False,
+        key=f"postit_share_{camp.get('id')}_{week_n}",
+    )
 
-                        if st.button("Poster le post-it", use_container_width=True, key=f"postit_submit_{camp.get('id')}_{week_n}"):
-                            if not (ps_success.strip() or ps_difficulty.strip() or ps_learning.strip()):
-                                st.error("Renseigne au moins une section (Succès / Difficulté / Apprentissage).")
-                            elif share_with_coach and ("@" not in coach_email_for_share):
-                                st.error("Email coach invalide.")
-                            else:
-                                body = (
-                                    f"Énergie: {mood}\n\n"
-                                    f"Succès:\n{ps_success.strip()}\n\n"
-                                    f"Difficulté:\n{ps_difficulty.strip()}\n\n"
-                                    f"Apprentissage:\n{ps_learning.strip()}\n"
-                                )
+    coach_email_default = str(camp.get("coach_email") or "").strip().lower() or str(
+        st.session_state.get("evs_coach_email") or ""
+    ).strip().lower()
 
-                                try:
-                                    entry = build_entry(
-                                        author_user_id=str(user.get("user_id") or user.get("id") or learner_email),
-                                        author_email=learner_email,
-                                        body=body,
-                                        tags=ps_tags,
-                                        share_with_coach=share_with_coach,
-                                        coach_email=coach_email_for_share if share_with_coach else None,
-                                    )
-                                    journal_create(entry)
+    coach_email_for_share = st.text_input(
+        "Email coach",
+        value=coach_email_default,
+        disabled=not share_with_coach,
+        key=f"postit_coach_{camp.get('id')}_{week_n}",
+    )
 
-                                    # Inject into weekly comment
-                                    if insert_into_weekly:
-                                        stamp = now_iso()
-                                        block = f"\n\n🟨 Post-it ({stamp})\n{body.strip()}\n"
-                                        w["learner_comment"] = ((comment or "").strip() + block).strip()
+    insert_into_weekly = st.toggle(
+        "Insérer aussi dans mon commentaire hebdo",
+        value=True,
+        key=f"postit_inject_{camp.get('id')}_{week_n}",
+    )
 
-                                    st.success("Post-it enregistré ✅")
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Erreur d’enregistrement: {e}")
+    if st.button("Poster le post-it", use_container_width=True, key=f"postit_submit_{camp.get('id')}_{week_n}"):
+        if not (ps_success.strip() or ps_difficulty.strip() or ps_learning.strip()):
+            st.error("Renseigne au moins une section (Succès / Difficulté / Apprentissage).")
+        elif share_with_coach and ("@" not in coach_email_for_share):
+            st.error("Email coach invalide.")
+        else:
+            body = (
+                f"Énergie: {mood}\n\n"
+                f"Succès:\n{ps_success.strip()}\n\n"
+                f"Difficulté:\n{ps_difficulty.strip()}\n\n"
+                f"Apprentissage:\n{ps_learning.strip()}\n"
+            )
 
-                    # Save weekly update
-                    if st.button(
-                        "💾 Enregistrer mon update",
-                        key=f"save_learner_week_{camp.get('id')}_{week_n}",
-                        use_container_width=True,
-                    ):
-                        now = now_iso()
-                        w["actions"] = actions
-                        w["learner_comment"] = comment
-                        w["updated_at"] = now
-                        camp["updated_at"] = now
+            try:
+                entry = build_entry(
+                    author_user_id=str(user.get("user_id") or user.get("id") or learner_email),
+                    author_email=learner_email,
+                    body=body,
+                    tags=ps_tags,
+                    share_with_coach=share_with_coach,
+                    coach_email=coach_email_for_share if share_with_coach else None,
+                )
+                journal_create(entry)
 
-                        campaigns = _upsert_campaign(campaigns, camp)
-                        save_campaigns(campaigns)
+                # Email coach AU MOMENT DU POST-IT (pas au save weekly)
+                if share_with_coach:
+                    cid = str(camp.get("id") or "").strip()
+                    wk = int(week_n)
+                    to_email = coach_email_for_share.strip().lower()
 
-                        cid = str(camp.get("id") or "").strip()
-                        coach_email = str(camp.get("coach_email") or "").strip().lower() or "admin@everboarding.fr"
-                        send_once(
-                            event_key=f"LEARNER_UPDATE:{cid}:{week_n}:{now}",
-                            event_type="LEARNER_UPDATE",
-                            request_id=cid,
-                            to_email=coach_email,
-                            subject=f"[EVERSKILLS] Update semaine {week_n} ({cid})",
-                            text_body=f"Update learner (semaine {week_n}).\n\nLearner: {learner_email}\n\n{comment}",
-                            meta={"camp_id": cid, "week": week_n, "learner_email": learner_email},
-                        )
+                    send_once(
+                        event_key=f"JOURNAL_SHARED:{cid}:{wk}:{entry.id}",
+                        event_type="JOURNAL_SHARED",
+                        request_id=cid,
+                        to_email=to_email,
+                        subject=f"[EVERSKILLS] Post-it partagé — semaine {wk} ({cid})",
+                        text_body=(
+                            f"Le learner {learner_email} a partagé un post-it.\n\n"
+                            f"Campagne: {cid}\n"
+                            f"Semaine: {wk}\n\n"
+                            f"{body}"
+                        ),
+                        meta={
+                            "camp_id": cid,
+                            "week": wk,
+                            "learner_email": learner_email,
+                            "coach_email": to_email,
+                            "journal_id": entry.id,
+                        },
+                    )
 
-                        st.success("OK ✅")
-                        st.rerun()
+                # Inject dans weekly comment (option)
+                if insert_into_weekly:
+                    stamp = now_iso()
+                    block = f"\n\n🟨 Post-it ({stamp})\n{body.strip()}\n"
+                    w["learner_comment"] = ((comment or "").strip() + block).strip()
+
+                st.success("Post-it enregistré ✅")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erreur d’enregistrement: {e}")
+
+# -----------------------------
+# Save weekly update (indépendant du Post-it)
+# -----------------------------
+if st.button(
+    "💾 Enregistrer mon update",
+    key=f"save_learner_week_{camp.get('id')}_{week_n}",
+    use_container_width=True,
+):
+    now = now_iso()
+    w["actions"] = actions
+    w["learner_comment"] = comment
+    w["updated_at"] = now
+    camp["updated_at"] = now
+
+    campaigns = _upsert_campaign(campaigns, camp)
+    save_campaigns(campaigns)
+
+    cid = str(camp.get("id") or "").strip()
+    coach_email = str(camp.get("coach_email") or "").strip().lower() or "admin@everboarding.fr"
+    send_once(
+        event_key=f"LEARNER_UPDATE:{cid}:{week_n}:{now}",
+        event_type="LEARNER_UPDATE",
+        request_id=cid,
+        to_email=coach_email,
+        subject=f"[EVERSKILLS] Update semaine {week_n} ({cid})",
+        text_body=f"Update learner (semaine {week_n}).\n\nLearner: {learner_email}\n\n{comment}",
+        meta={"camp_id": cid, "week": week_n, "learner_email": learner_email},
+    )
+
+    st.success("OK ✅")
+    st.rerun()
+
 
 # -----------------------------------------------------------------------------
 # CR12 — Journal (historique uniquement)
