@@ -17,6 +17,36 @@ from everskills.services.storage import (
 )
 from everskills.services.guard import require_role
 
+from everskills.services.journal_gsheet import journal_list_coach
+st.divider()
+st.markdown("### 📓 Journal partagé")
+
+user = st.session_state.get("user") or {}
+coach_email = str(user.get("email") or "").strip().lower()
+
+if not coach_email:
+    st.warning("Email coach introuvable (session).")
+else:
+    try:
+        items = journal_list_coach(coach_email, limit=100)
+    except Exception as e:
+        st.error(f"Erreur de lecture: {e}")
+        items = []
+
+    if not items:
+        st.info("Aucune note partagée pour l’instant.")
+    else:
+        for it in items[:30]:
+            ts = it.get("created_at") or ""
+            author = it.get("author_email") or ""
+            title = f"{author} — {ts}"
+            with st.expander(title, expanded=False):
+                tags_list = it.get("tags") or []
+                if tags_list:
+                    st.caption("Tags: " + ", ".join([str(t) for t in tags_list]))
+                st.text(it.get("body") or "")
+
+
 # CR11: email events (idempotent)
 from everskills.services.mail_send_once import send_once
 
