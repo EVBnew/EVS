@@ -204,87 +204,6 @@ def _compute_global_completion(camp: Dict[str, Any]) -> float:
             count += 1
     return (total_pct / count) if count else 0.0
 
-# -----------------------------------------------------------------------------
-# CR12 — Journal de pratique (Learner)
-# -----------------------------------------------------------------------------
-st.markdown("---")
-st.subheader("Journal de pratique")
-
-# Mobile-first: si tu veux strict mobile, décommente la condition
-# if st.query_params.get("mode") != "m":
-#     st.info("Journal disponible en mode mobile (?mode=m).")
-#     st.stop()
-
-# Récup user (robuste, sans casser l’existant)
-user = st.session_state.get("user") or st.session_state.get("current_user") or {}
-author_email = (user.get("email") or user.get("user_email") or "").strip().lower()
-author_user_id = str(user.get("user_id") or user.get("id") or author_email or "unknown").strip()
-
-if not author_email:
-    st.warning("Journal: email utilisateur introuvable (session).")
-else:
-    # Coach email (si dispo)
-    coach_email_default = (user.get("coach_email") or st.session_state.get("coach_email") or "").strip().lower()
-
-    with st.form("journal_form", clear_on_submit=True):
-        st.caption("Qu’as-tu testé aujourd’hui ?")
-        template = "Succès:\n\nDifficulté:\n\nApprentissage:\n"
-        body = st.text_area(
-            "Note",
-            value=template,
-            height=220,
-            help="Décris ce que tu as essayé. Puis ce qui a marché, ce qui a bloqué, ce que tu retiens.",
-        )
-        tags = st.text_input("Tags (séparés par des virgules)", placeholder="ex: focus, respiration, courage")
-
-        share_with_coach = st.toggle("Copier mon coach (partager)", value=False)
-        coach_email = ""
-        if share_with_coach:
-            coach_email = st.text_input("Email coach", value=coach_email_default, placeholder="coach@email.com")
-
-        submitted = st.form_submit_button("Poster")
-
-    if submitted:
-        if not body.strip():
-            st.error("Ta note est vide.")
-        elif share_with_coach and ("@" not in coach_email):
-            st.error("Email coach invalide.")
-        else:
-            try:
-                entry = build_entry(
-                    author_user_id=author_user_id,
-                    author_email=author_email,
-                    body=body,
-                    tags=tags,
-                    share_with_coach=share_with_coach,
-                    coach_email=coach_email if share_with_coach else None,
-                )
-                journal_create(entry)
-                st.success("Note enregistrée.")
-            except Exception as e:
-                st.error(f"Erreur d’enregistrement: {e}")
-
-    # Historique
-    try:
-        items = journal_list_learner(author_email, limit=50)
-    except Exception as e:
-        st.error(f"Erreur de lecture: {e}")
-        items = []
-
-    if not items:
-        st.info("Aucune note pour l’instant.")
-    else:
-        st.caption("Historique (récent → ancien)")
-        for it in items[:20]:
-            shared = bool(it.get("share_with_coach"))
-            ts = it.get("created_at") or ""
-            tags_list = it.get("tags") or []
-            header = ("✅ Partagé" if shared else "🔒 Privé") + f" — {ts}"
-            with st.expander(header, expanded=False):
-                if tags_list:
-                    st.write("**Tags :** " + ", ".join([str(t) for t in tags_list]))
-                st.text(it.get("body") or "")
-
 # ----------------------------
 # UI
 # ----------------------------
@@ -294,6 +213,115 @@ st.title("🎯 Learner Space")
 st.caption("Demande → plan → exécution → update → feedback coach")
 
 t1, t2 = st.tabs(["📝 Ma demande", "📌 Mon plan"])
+
+from datetime import datetime, timezone
+
+def _parse_iso_dt(s: str) -> datetime | None:
+    s = (s or "").strip()
+    if not s:
+        return None
+    try:
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        return datetime.fromisoformat(s)
+    except Exception:
+        return None
+
+def _current_week_for_campaign(camp: Dict[str, Any]) -> int:
+    weeks = int(camp.get("weeks") or 1)
+    start = _parse_iso_dt(str(camp.get("activated_at") or camp.get("created_at") or camp.get("ts") or ""))
+    if not start:
+        return 1
+    now = datetime.now(timezone.utc)
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=timezone.utc)
+    days = max(0, int((now - start).total_seconds() // 86400))
+    w = 1 + (days // 7)
+    return max(1, min(int(w), int(weeks)))
+
+def _get_active_campaign_for_learner(email: str) -> Dict[str, Any] | None:
+    campaigns = load_campaigns() or []
+    campaigns = [c for c in campaigns if isinstance(c, dict)]
+    my = [
+        c for c in campaigns
+        if _norm_email(c.get("learner_email", "")) == email
+        and str(c.get("status") or "") in ("active", "coach_validated", "program_ready", "closed", "draft")
+    ]
+    if not my:
+        return None
+    my = sorted(my, key=lambda c: str(c.get("updated_at") or c.get("activated_at") or c.get("created_at") or ""), reverse=True)
+    return my[0]
+
+def _insert_note_in_weekly(camp: Dict[str, Any], note_text: str) -> None:
+    campaigns = load_campaigns() or []
+    campaigns = [c for c in campaigns if isinstance(c, dict)]
+    camp = _ensure_weekly_plan(dict(camp))
+    wk = _current_week_for_campaign(camp)
+    wp = camp.get("weekly_plan") or []
+    for w in wp:
+        if isinstance(w, dict) and int(w.get("week") or 0) == wk:
+            existing = str(w.get("learner_comment") or "").strip()
+            stamp = now_iso()
+            block = f"\n\n🟨 Post-it ({stamp})\n{note_text.strip()}\n"
+            w["learner_comment"] = (existing + block).strip() if existing else block.strip()
+            w["updated_at"] = now_iso()
+            camp["updated_at"] = now_iso()
+            break
+    campaigns = _upsert_campaign(campaigns, camp)
+    save_campaigns(campaigns)
+
+st.divider()
+with st.container(border=True):
+    st.markdown("### 🟨 Post-it (Journal)")
+    st.caption("Saisie rapide. Enregistré dans ton journal. Optionnel: injecter dans ton weekly update (semaine courante).")
+
+    with st.form("postit_form", clear_on_submit=True):
+        c1, c2 = st.columns(2)
+        with c1:
+            success = st.text_area("Succès", height=90)
+        with c2:
+            difficulty = st.text_area("Difficulté", height=90)
+
+        learning = st.text_area("Apprentissage", height=90)
+        tags = st.text_input("Tags (virgules)", placeholder="ex: focus, respiration")
+
+        share_with_coach = st.toggle("Partager avec mon coach", value=False)
+        coach_email_default = str(user.get("coach_email") or st.session_state.get("evs_coach_email") or "").strip().lower()
+        coach_email = st.text_input("Email coach", value=coach_email_default, disabled=not share_with_coach)
+
+        inject_weekly = st.toggle("Insérer dans mon weekly update (semaine courante)", value=False)
+
+        ok_post = st.form_submit_button("Poster")
+
+    if ok_post:
+        if not (success.strip() or difficulty.strip() or learning.strip()):
+            st.error("Renseigne au moins une section.")
+        elif share_with_coach and ("@" not in coach_email):
+            st.error("Email coach invalide.")
+        else:
+            body = f"Succès:\n{success.strip()}\n\nDifficulté:\n{difficulty.strip()}\n\nApprentissage:\n{learning.strip()}\n"
+            try:
+                entry = build_entry(
+                    author_user_id=str(user.get("user_id") or user.get("id") or learner_email),
+                    author_email=learner_email,
+                    body=body,
+                    tags=tags,
+                    share_with_coach=share_with_coach,
+                    coach_email=coach_email if share_with_coach else None,
+                )
+                journal_create(entry)
+
+                if inject_weekly:
+                    camp0 = _get_active_campaign_for_learner(learner_email)
+                    if camp0:
+                        _insert_note_in_weekly(camp0, body)
+                    else:
+                        st.warning("Aucune campagne trouvée: post-it enregistré dans le journal uniquement.")
+
+                st.success("Post-it enregistré ✅")
+            except Exception as e:
+                st.error(f"Erreur: {e}")
+
 
 # ----------------------------
 # TAB 1: Request
@@ -580,3 +608,82 @@ with t2:
 
                         st.success("OK ✅")
                         st.rerun()
+# -----------------------------------------------------------------------------
+# CR12 — Journal de pratique (Learner)
+# -----------------------------------------------------------------------------
+st.markdown("---")
+st.subheader("Journal de pratique")
+st.caption("Note personnelle. Optionnel: partager avec ton coach.")
+
+user = st.session_state.get("user") or {}
+author_email = str(user.get("email") or "").strip().lower()
+author_user_id = str(user.get("user_id") or user.get("id") or author_email or "unknown").strip()
+
+if not author_email:
+    st.warning("Journal: email utilisateur introuvable (session).")
+else:
+    coach_email_default = str(
+        user.get("coach_email")
+        or st.session_state.get("evs_coach_email")
+        or ""
+    ).strip().lower()
+
+    with st.form("journal_form", clear_on_submit=True):
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            success = st.text_area("Succès", height=110, placeholder="Ce qui a marché, même partiellement…")
+        with col2:
+            difficulty = st.text_area("Difficulté", height=110, placeholder="Ce qui a bloqué / résisté…")
+
+        learning = st.text_area("Apprentissage", height=110, placeholder="Ce que je retiens / prochaine piste…")
+
+        tags = st.text_input("Tags (séparés par des virgules)", placeholder="ex: focus, respiration, courage")
+
+        share_with_coach = st.toggle("Partager avec mon coach", value=False)
+        coach_email = ""
+        if share_with_coach:
+            coach_email = st.text_input("Email coach", value=coach_email_default, placeholder="coach@email.com")
+
+        submitted = st.form_submit_button("Poster")
+
+    if submitted:
+        body = f"Succès:\n{success.strip()}\n\nDifficulté:\n{difficulty.strip()}\n\nApprentissage:\n{learning.strip()}\n"
+        if not (success.strip() or difficulty.strip() or learning.strip()):
+            st.error("Renseigne au moins une section (Succès / Difficulté / Apprentissage).")
+        elif share_with_coach and ("@" not in coach_email):
+            st.error("Email coach invalide.")
+        else:
+            try:
+                entry = build_entry(
+                    author_user_id=author_user_id,
+                    author_email=author_email,
+                    body=body,
+                    tags=tags,
+                    share_with_coach=share_with_coach,
+                    coach_email=coach_email if share_with_coach else None,
+                )
+                journal_create(entry)
+                st.success("Note enregistrée.")
+            except Exception as e:
+                st.error(f"Erreur d’enregistrement: {e}")
+
+    # Historique
+    try:
+        items = journal_list_learner(author_email, limit=50)
+    except Exception as e:
+        st.error(f"Erreur de lecture: {e}")
+        items = []
+
+    if not items:
+        st.info("Aucune note pour l’instant.")
+    else:
+        st.caption("Historique (récent → ancien)")
+        for it in items[:20]:
+            shared = bool(it.get("share_with_coach"))
+            ts = it.get("created_at") or ""
+            tags_list = it.get("tags") or []
+            header = ("✅ Partagé" if shared else "🔒 Privé") + f" — {ts}"
+            with st.expander(header, expanded=False):
+                if tags_list:
+                    st.write("**Tags :** " + ", ".join([str(t) for t in tags_list]))
+                st.text(it.get("body") or "")
