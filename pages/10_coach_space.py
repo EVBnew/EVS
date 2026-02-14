@@ -7,6 +7,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import streamlit as st
 
+# MUST be first Streamlit command
+st.set_page_config(page_title="Coach Space — EVERSKILLS", layout="wide")
+
 from everskills.services.access import require_login, find_user
 from everskills.services.storage import (
     load_requests,
@@ -16,13 +19,35 @@ from everskills.services.storage import (
     now_iso,
 )
 from everskills.services.guard import require_role
-
 from everskills.services.journal_gsheet import journal_list_coach
+
+# CR11: email events (idempotent)
+from everskills.services.mail_send_once import send_once
+
+
+# ----------------------------
+# Auth
+# ----------------------------
+user = st.session_state.get("user")
+ok, msg = require_login(user)
+if not ok:
+    st.error(msg)
+    st.info("Retourne sur Welcome (app) pour te connecter.")
+    st.stop()
+
+require_role({"coach", "super_admin"})
+
+if user.get("role") not in ("coach", "admin", "super_admin"):
+    st.warning("Accès réservé aux coachs / admins.")
+    st.stop()
+
+coach_email = (user.get("email") or "").strip().lower()
+
+# ----------------------------
+# CR12 — Journal partagé (Coach)  ✅ placed AFTER auth
+# ----------------------------
 st.divider()
 st.markdown("### 📓 Journal partagé")
-
-user = st.session_state.get("user") or {}
-coach_email = str(user.get("email") or "").strip().lower()
 
 if not coach_email:
     st.warning("Email coach introuvable (session).")
@@ -45,32 +70,6 @@ else:
                 if tags_list:
                     st.caption("Tags: " + ", ".join([str(t) for t in tags_list]))
                 st.text(it.get("body") or "")
-
-
-# CR11: email events (idempotent)
-from everskills.services.mail_send_once import send_once
-
-
-st.set_page_config(page_title="Coach Space — EVERSKILLS", layout="wide")
-
-
-# ----------------------------
-# Auth
-# ----------------------------
-user = st.session_state.get("user")
-ok, msg = require_login(user)
-if not ok:
-    st.error(msg)
-    st.info("Retourne sur Welcome (app) pour te connecter.")
-    st.stop()
-
-require_role({"coach", "super_admin"})
-
-if user.get("role") not in ("coach", "admin", "super_admin"):
-    st.warning("Accès réservé aux coachs / admins.")
-    st.stop()
-
-coach_email = (user.get("email") or "").strip().lower()
 
 
 # ----------------------------
@@ -527,7 +526,6 @@ with col_left:
     st.session_state["coach_view"] = view
 
     if view == "Demandes":
-        # ✅ FIX: afficher submitted + (assigned/in_progress) assignées à CE coach
         visible = []
         for r in requests_sorted:
             stt = _req_status(r)
@@ -810,7 +808,6 @@ with col_mid:
                         _append_event(selected_camp, "coach_week_saved", actor="coach", payload={"week": week_n})
                         _save_campaign_in_list(campaigns, selected_camp)
 
-                        # ✅ CR11 #4b: mail learner sur update coach
                         learner_to = _norm_email(str(selected_camp.get("learner_email") or ""))
                         coach_from = _norm_email(str(selected_camp.get("coach_email") or coach_email))
                         camp_id = str(selected_camp.get("id") or "").strip()
@@ -898,7 +895,6 @@ with col_right:
                 _append_event(selected_camp, "campaign_closed", actor="coach")
                 _save_campaign_in_list(campaigns, selected_camp)
 
-                # ✅ CR11 #5: mail learner sur clôture
                 camp_id2 = str(selected_camp.get("id") or "").strip()
                 send_once(
                     event_key=f"CAMPAIGN_CLOSED:{camp_id2}",
