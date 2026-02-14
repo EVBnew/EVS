@@ -16,6 +16,12 @@ from everskills.services.storage import (
 )
 from everskills.services.guard import require_role
 
+from everskills.services.journal_gsheet import (
+    build_entry,
+    journal_create,
+    journal_list_learner,
+)
+
 # CR11: email events (idempotent)
 from everskills.services.mail_send_once import send_once
 
@@ -198,6 +204,86 @@ def _compute_global_completion(camp: Dict[str, Any]) -> float:
             count += 1
     return (total_pct / count) if count else 0.0
 
+# -----------------------------------------------------------------------------
+# CR12 — Journal de pratique (Learner)
+# -----------------------------------------------------------------------------
+st.markdown("---")
+st.subheader("Journal de pratique")
+
+# Mobile-first: si tu veux strict mobile, décommente la condition
+# if st.query_params.get("mode") != "m":
+#     st.info("Journal disponible en mode mobile (?mode=m).")
+#     st.stop()
+
+# Récup user (robuste, sans casser l’existant)
+user = st.session_state.get("user") or st.session_state.get("current_user") or {}
+author_email = (user.get("email") or user.get("user_email") or "").strip().lower()
+author_user_id = str(user.get("user_id") or user.get("id") or author_email or "unknown").strip()
+
+if not author_email:
+    st.warning("Journal: email utilisateur introuvable (session).")
+else:
+    # Coach email (si dispo)
+    coach_email_default = (user.get("coach_email") or st.session_state.get("coach_email") or "").strip().lower()
+
+    with st.form("journal_form", clear_on_submit=True):
+        st.caption("Qu’as-tu testé aujourd’hui ?")
+        template = "Succès:\n\nDifficulté:\n\nApprentissage:\n"
+        body = st.text_area(
+            "Note",
+            value=template,
+            height=220,
+            help="Décris ce que tu as essayé. Puis ce qui a marché, ce qui a bloqué, ce que tu retiens.",
+        )
+        tags = st.text_input("Tags (séparés par des virgules)", placeholder="ex: focus, respiration, courage")
+
+        share_with_coach = st.toggle("Copier mon coach (partager)", value=False)
+        coach_email = ""
+        if share_with_coach:
+            coach_email = st.text_input("Email coach", value=coach_email_default, placeholder="coach@email.com")
+
+        submitted = st.form_submit_button("Poster")
+
+    if submitted:
+        if not body.strip():
+            st.error("Ta note est vide.")
+        elif share_with_coach and ("@" not in coach_email):
+            st.error("Email coach invalide.")
+        else:
+            try:
+                entry = build_entry(
+                    author_user_id=author_user_id,
+                    author_email=author_email,
+                    body=body,
+                    tags=tags,
+                    share_with_coach=share_with_coach,
+                    coach_email=coach_email if share_with_coach else None,
+                )
+                journal_create(entry)
+                st.success("Note enregistrée.")
+            except Exception as e:
+                st.error(f"Erreur d’enregistrement: {e}")
+
+    # Historique
+    try:
+        items = journal_list_learner(author_email, limit=50)
+    except Exception as e:
+        st.error(f"Erreur de lecture: {e}")
+        items = []
+
+    if not items:
+        st.info("Aucune note pour l’instant.")
+    else:
+        st.caption("Historique (récent → ancien)")
+        for it in items[:20]:
+            shared = bool(it.get("share_with_coach"))
+            ts = it.get("created_at") or ""
+            tags_list = it.get("tags") or []
+            header = ("✅ Partagé" if shared else "🔒 Privé") + f" — {ts}"
+            with st.expander(header, expanded=False):
+                if tags_list:
+                    st.write("**Tags :** " + ", ".join([str(t) for t in tags_list]))
+                st.text(it.get("body") or "")
 
 # ----------------------------
 # UI
