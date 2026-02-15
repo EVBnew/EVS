@@ -14,7 +14,18 @@ import streamlit as st
 # -----------------------------------------------------------------------------
 # Page config (MUST be first Streamlit call)
 # -----------------------------------------------------------------------------
-st.set_page_config(page_title="WELCOME — EVERSKILLS", layout="wide")
+st.set_page_config(
+    page_title="EVERSKILLS",
+    page_icon="assets/pwa/favicon-32.png",
+    layout="wide"
+)
+
+
+st.markdown("""
+<link rel="apple-touch-icon" href="assets/pwa/favicon-32.png">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/pwa/favicon-32.png">
+""", unsafe_allow_html=True)
+
 
 # --- PWA / Mobile shortcut (light)
 st.markdown(
