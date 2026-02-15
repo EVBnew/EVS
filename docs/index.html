@@ -9,14 +9,29 @@
   <link rel="icon" href="icon-192.png" />
   <link rel="apple-touch-icon" href="icon-192.png" />
 </head>
-<body style="font-family:system-ui;text-align:center;margin-top:48px;">
+<body style="font-family:system-ui;text-align:center;margin-top:48px;padding:0 16px;">
   <h2>EVERSKILLS</h2>
-  <p>1) Installe l’app (menu ⋮)  2) Ouvre EVERSKILLS</p>
-  <p><a href="https://everskill.streamlit.app" style="font-size:18px;">Ouvrir EVERSKILLS</a></p>
+  <p id="msg">1) Installe l’app (menu ⋮)  2) Ouvre EVERSKILLS</p>
+  <p><a id="open" href="https://everskill.streamlit.app" style="font-size:18px;">Ouvrir EVERSKILLS</a></p>
 
   <script>
+    const target = "https://everskill.streamlit.app";
+
+    // PWA installability helper
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("./sw.js");
+    }
+
+    // If launched as installed app → auto-redirect (no extra tap)
+    const isStandalone =
+      (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ||
+      (window.navigator && window.navigator.standalone === true);
+
+    if (isStandalone) {
+      document.getElementById("msg").textContent = "Ouverture EVERSKILLS…";
+      setTimeout(() => { window.location.replace(target); }, 250);
+    } else {
+      document.getElementById("open").href = target;
     }
   </script>
 </body>
