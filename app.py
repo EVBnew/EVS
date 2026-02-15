@@ -20,26 +20,45 @@ st.set_page_config(
     layout="wide"
 )
 
+import streamlit.components.v1 as components
 
-st.markdown(
+components.html(
     """
-<link rel="apple-touch-icon" sizes="180x180" href="https://raw.githubusercontent.com/EVBnew/EVS/main/assets/pwa/apple-touch-icon.png">
-<link rel="icon" type="image/png" sizes="32x32" href="https://raw.githubusercontent.com/EVBnew/EVS/main/assets/pwa/favicon-32.png">
+<script>
+(function() {
+  const addLink = (rel, href, sizes, type) => {
+    const l = document.createElement('link');
+    l.rel = rel; l.href = href;
+    if (sizes) l.sizes = sizes;
+    if (type) l.type = type;
+    document.head.appendChild(l);
+  };
+
+  const addMeta = (name, content) => {
+    const m = document.createElement('meta');
+    m.name = name; m.content = content;
+    document.head.appendChild(m);
+  };
+
+  addLink('apple-touch-icon',
+    'https://raw.githubusercontent.com/EVBnew/EVS/main/assets/pwa/apple-touch-icon.png',
+    '180x180'
+  );
+
+  addLink('icon',
+    'https://raw.githubusercontent.com/EVBnew/EVS/main/assets/pwa/favicon-32.png',
+    null,
+    'image/png'
+  );
+
+  addMeta('theme-color', '#0B5FFF');
+  addMeta('apple-mobile-web-app-capable', 'yes');
+  addMeta('apple-mobile-web-app-status-bar-style', 'default');
+  addMeta('apple-mobile-web-app-title', 'EVERSKILLS');
+})();
+</script>
 """,
-    unsafe_allow_html=True,
-)
-
-
-
-# --- PWA / Mobile shortcut (light)
-st.markdown(
-    """
-    <meta name="theme-color" content="#0B5FFF">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <meta name="apple-mobile-web-app-title" content="EVERSKILLS">
-    """,
-    unsafe_allow_html=True,
+    height=0,
 )
 
 
