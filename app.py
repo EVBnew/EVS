@@ -21,10 +21,14 @@ st.set_page_config(
 )
 
 
-st.markdown("""
-<link rel="apple-touch-icon" href="assets/pwa/favicon-32.png">
-<link rel="icon" type="image/png" sizes="32x32" href="assets/pwa/favicon-32.png">
-""", unsafe_allow_html=True)
+st.markdown(
+    """
+<link rel="apple-touch-icon" sizes="180x180" href="https://raw.githubusercontent.com/EVBnew/EVS/main/assets/pwa/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="https://raw.githubusercontent.com/EVBnew/EVS/main/assets/pwa/favicon-32.png">
+""",
+    unsafe_allow_html=True,
+)
+
 
 
 # --- PWA / Mobile shortcut (light)
