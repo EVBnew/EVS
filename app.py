@@ -16,6 +16,18 @@ import streamlit as st
 # -----------------------------------------------------------------------------
 st.set_page_config(page_title="WELCOME — EVERSKILLS", layout="wide")
 
+# --- PWA / Mobile shortcut (light)
+st.markdown(
+    """
+    <meta name="theme-color" content="#0B5FFF">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="EVERSKILLS">
+    """,
+    unsafe_allow_html=True,
+)
+
+
 # -----------------------------------------------------------------------------
 # Ensure repo root (EVERSKILLS/) is on PYTHONPATH
 # -----------------------------------------------------------------------------
