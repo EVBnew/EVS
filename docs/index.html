@@ -1,18 +1,23 @@
-﻿<!DOCTYPE html>
-<html>
+﻿<!doctype html>
+<html lang="fr">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>EVERSKILLS</title>
-  <link rel="manifest" href="manifest.webmanifest">
-  <meta name="theme-color" content="#0B5FFF">
-  <link rel="icon" href="icon-192.png">
+  <meta name="theme-color" content="#0B5FFF" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icon-192.png" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
 </head>
-<body style="font-family:sans-serif;text-align:center;margin-top:50px;">
-  <h1>EVERSKILLS</h1>
-  <p>Installe l'application puis ouvre-la.</p>
+<body style="font-family:system-ui;text-align:center;margin-top:48px;">
+  <h2>EVERSKILLS</h2>
+  <p>1) Installe l’app (menu ⋮)  2) Ouvre EVERSKILLS</p>
+  <p><a href="https://everskill.streamlit.app" style="font-size:18px;">Ouvrir EVERSKILLS</a></p>
 
-  <button onclick="window.location.href='https://everskill.streamlit.app'">
-    Ouvrir EVERSKILLS
-  </button>
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("./sw.js");
+    }
+  </script>
 </body>
 </html>
