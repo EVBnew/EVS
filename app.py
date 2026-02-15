@@ -61,6 +61,10 @@ components.html(
     height=0,
 )
 
+st.markdown(
+    '<link rel="manifest" href="/assets/pwa/manifest.json">',
+    unsafe_allow_html=True,
+)
 
 # -----------------------------------------------------------------------------
 # Ensure repo root (EVERSKILLS/) is on PYTHONPATH
