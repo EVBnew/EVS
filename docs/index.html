@@ -4,7 +4,6 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>EVERSKILLS</title>
-
   <meta name="theme-color" content="#0B5FFF" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icon-192.png" />
@@ -12,14 +11,14 @@
 </head>
 <body style="font-family:system-ui; padding:24px;">
   <h2>EVERSKILLS</h2>
-  <p>Ouverture…</p>
-  <p><a id="fallback" href="https://everskill.streamlit.app">Ouvrir EVERSKILLS</a></p>
+  <p>Installe l’app via le menu ⋮ puis “Installer l’application”.</p>
+  <p><a href="https://everskill.streamlit.app">Ouvrir EVERSKILLS</a></p>
 
   <script>
-    const target = "https://everskill.streamlit.app";
-    // petit délai pour laisser Android/iOS lire manifest + icône
-    setTimeout(() => { window.location.replace(target); }, 400);
-    document.getElementById("fallback").href = target;
+    // Service worker requis pour être "installable" sur Android
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("./sw.js");
+    }
   </script>
 </body>
 </html>
