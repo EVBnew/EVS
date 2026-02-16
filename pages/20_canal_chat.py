@@ -15,7 +15,7 @@ from everskills.services.mail_send_once import send_once
 # -----------------------------------------------------------------------------
 # Page config (MUST be first Streamlit call)
 # -----------------------------------------------------------------------------
-st.set_page_config(page_title="Canal Coach — EVERSKILLS", layout="wide")
+st.set_page_config(page_title="Canal Chat — EVERSKILLS", layout="wide")
 
 # --- ROLE GUARD (anti accès direct URL)
 require_role({"learner", "super_admin"})
@@ -37,7 +37,7 @@ if not learner_email or "@" not in learner_email:
 # -----------------------------------------------------------------------------
 # Helpers
 # -----------------------------------------------------------------------------
-CANAL_PROMPT = "Canal Coach"
+CANAL_PROMPT = "Canal Chat"
 CANAL_PROMPT_KEY = CANAL_PROMPT.lower().strip()
 
 MOODS = ["🟢 En confiance", "🔵 Flow", "🟡 Neutre", "🟠 Tendu", "🔴 Fatigué"]
@@ -155,7 +155,7 @@ def _bubble(body: str, ts: str, is_me: bool) -> None:
 # -----------------------------------------------------------------------------
 # UI
 # -----------------------------------------------------------------------------
-st.title("💬 Canal Coach")
+st.title("💬 Canal Chat")
 st.caption("Conversation directe avec ton coach (style WhatsApp).")
 
 # -----------------------------------------------------------------------------
