@@ -10,14 +10,27 @@ import uuid
 import requests
 
 import streamlit as st
+import streamlit.components.v1 as components
 
-from pathlib import Path
-
+# -----------------------------------------------------------------------------
+# Repo root (used for safe page links)
+# -----------------------------------------------------------------------------
 REPO_ROOT = Path(__file__).resolve().parent
 
-def safe_page_link(page_path: str, label: str, icon: str):
-    if (REPO_ROOT / page_path).exists():
-        st.page_link(page_path, label=label, icon=icon)
+
+def safe_page_link(page_path: str, label: str, icon: str) -> None:
+    """
+    Prevent StreamlitPageNotFoundError if a page file does not exist in the repo.
+    page_path examples:
+      - "pages/11_learner_space.py"
+      - "pages/10_coach_space.py"
+    """
+    try:
+        if (REPO_ROOT / page_path).exists():
+            st.page_link(page_path, label=label, icon=icon)
+    except Exception:
+        # Never crash sidebar
+        pass
 
 
 # -----------------------------------------------------------------------------
@@ -26,11 +39,12 @@ def safe_page_link(page_path: str, label: str, icon: str):
 st.set_page_config(
     page_title="EVERSKILLS",
     page_icon="assets/pwa/favicon-32.png",
-    layout="wide"
+    layout="wide",
 )
 
-import streamlit.components.v1 as components
-
+# -----------------------------------------------------------------------------
+# PWA-ish meta / icons (best-effort)
+# -----------------------------------------------------------------------------
 components.html(
     """
 <script>
@@ -70,15 +84,11 @@ components.html(
     height=0,
 )
 
-st.markdown(
-    '<link rel="manifest" href="/assets/pwa/manifest.json">',
-    unsafe_allow_html=True,
-)
+st.markdown('<link rel="manifest" href="/assets/pwa/manifest.json">', unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
 # Ensure repo root (EVERSKILLS/) is on PYTHONPATH
 # -----------------------------------------------------------------------------
-REPO_ROOT = Path(__file__).resolve().parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
@@ -88,7 +98,6 @@ from everskills.services.access import (  # noqa: E402
     find_user,
     issue_session_token,
     load_user_from_session_token,
-
 )
 from everskills.services.passwords import hash_password_pbkdf2  # noqa: E402
 from everskills.services.gsheet_access import get_gsheet_api  # noqa: E402
@@ -101,9 +110,10 @@ try:
     ensure_demo_seed()
 except Exception:
     pass
-# -------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
 # Session bootstrap from URL token (back button / refresh safe)
-# -------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 qp = st.query_params
 session_token = (qp.get("session") or "").strip()
 
@@ -113,12 +123,10 @@ if session_token and not st.session_state.get("user"):
         st.session_state["user"] = u
         st.session_state["just_logged_in"] = False
     else:
-        # token invalide → on nettoie pour éviter loop/back-button
         try:
             st.query_params.pop("session", None)
         except Exception:
             pass
-
 
 # -----------------------------------------------------------------------------
 # Global CSS (single source of truth)
@@ -202,7 +210,6 @@ def _logout() -> None:
         pass
 
 
-
 def _route_user(u: dict) -> None:
     role = (u.get("role") or "").strip()
     if role == "learner":
@@ -255,23 +262,37 @@ with st.sidebar:
     st.caption(f"EVERSKILLS · version {BUILD_ID} – {BUILD_DATE}")
     st.divider()
 
+    # Always available
     st.page_link("app.py", label="Welcome", icon="🏠")
-    safe_page_link("pages/03_training.py", label="Mes formations", icon="🎓")
 
+    # Hidden-by-default pages: ONLY show if file exists
+    # (avoid crashes if you renamed/removed them)
+    safe_page_link("pages/01_organization.py", label="Organisation", icon="🏢")
+    safe_page_link("pages/02_projects.py", label="Projets", icon="🗂️")
+    safe_page_link("pages/03_training.py", label="Mes formations", icon="🎓")
+    safe_page_link("pages/12_learner_program_chat.py", label="Learner program chat", icon="💬")
 
     r = _role()
-    if r in ("coach", "admin", "super_admin"):
-        safe_page_link("pages/03_training.py", label="Mes formations", icon="🎓")
 
     st.divider()
     st.caption("Espaces opérationnels")
 
     if r in ("learner", "super_admin"):
-        st.page_link("pages/11_learner_space.py", label="Learner Space", icon="🎯")
-        st.page_link("pages/12_learner_program_chat.py", label="Learner Chat", icon="💬")
+        safe_page_link("pages/11_learner_space.py", label="Learner Space", icon="🎯")
+        # Canal Chat (learner)
+        safe_page_link("pages/20_canal_chat.py", label="Canal Chat", icon="💬")
+        # fallback if you still have the old filename
+        safe_page_link("pages/20_canal_coach.py", label="Canal Chat", icon="💬")
 
     if r in ("coach", "admin", "super_admin"):
-        st.page_link("pages/10_coach_space.py", label="Coach Space", icon="🧠")
+        safe_page_link("pages/10_coach_space.py", label="Coach Space", icon="🧠")
+        # Canal Chat (coach)
+        safe_page_link("pages/30_canal_chat_coach.py", label="Canal Chat (coach)", icon="💬")
+        safe_page_link("pages/30_canal_coach_space.py", label="Canal Chat (coach)", icon="💬")
+
+    # Admin (if present)
+    if r in ("admin", "super_admin"):
+        safe_page_link("pages/90_admin_approvals.py", label="Admin Space", icon="🛠️")
 
 # -----------------------------------------------------------------------------
 # WELCOME
@@ -279,7 +300,7 @@ with st.sidebar:
 if h1:
     h1("WELCOME")  # type: ignore
 else:
-    st.title("VOTRE LOGO")
+    st.title("WELCOME")
 
 user = st.session_state.get("user")
 st.caption("Propulsé par EVERBOARDING · Upskilling Solutions")
@@ -330,7 +351,6 @@ def _reset_screen(token: str, email: str) -> None:
         p2 = st.text_input("Confirmer", type="password")
 
         ok_submit = st.button("Enregistrer", type="primary")
-
         if not ok_submit:
             return
 
@@ -345,10 +365,7 @@ def _reset_screen(token: str, email: str) -> None:
             st.error("Les mots de passe ne correspondent pas.")
             st.stop()
 
-        res = _call_apps_script(
-            "confirm_password_reset",
-            {"email": em2, "token": token, "new_password": p1},
-        )
+        res = _call_apps_script("confirm_password_reset", {"email": em2, "token": token, "new_password": p1})
         if not res.get("ok"):
             st.error("Lien invalide ou expiré.")
             st.stop()
@@ -372,7 +389,6 @@ def _reset_screen(token: str, email: str) -> None:
             st.caption(str(getattr(upd, "error", "")))
             st.stop()
 
-        # Re-login + session token
         u2 = authenticate(em2, p1)
         if not u2:
             st.success("Mot de passe mis à jour ✅")
@@ -388,7 +404,6 @@ def _reset_screen(token: str, email: str) -> None:
         st.session_state["just_logged_in"] = True
         st.query_params["session"] = issue_session_token(u2)
 
-        # Clean reset params only
         try:
             st.query_params.pop("reset_token", None)
             st.query_params.pop("email", None)
@@ -439,14 +454,11 @@ with col_login:
             email = st.text_input("Email", key="login_email")
             password = st.text_input("Mot de passe", type="password", key="login_password")
 
-            # (1) Connexion = GRIS
             submitted = st.button("Connexion", type="secondary")
 
-            # Mot de passe oublié = GRIS
             if st.button("Mot de passe oublié ?", type="secondary", use_container_width=True):
                 st.session_state["auth_mode"] = "reset_request"
                 st.rerun()
-
 
             if submitted:
                 u = authenticate((email or "").strip(), password or "")
@@ -455,13 +467,9 @@ with col_login:
                 else:
                     st.session_state["user"] = u
                     st.session_state["just_logged_in"] = True
-
-                    tok = issue_session_token(u)
-                    st.query_params["session"] = tok
-
+                    st.query_params["session"] = issue_session_token(u)
                     st.success("Login OK ✅")
                     st.rerun()
-
 
 # --- RIGHT: SIGNUP
 with col_signup:
@@ -473,7 +481,6 @@ with col_signup:
         last_name = st.text_input("Nom", key="signup_last_name")
         new_email = st.text_input("Email", key="signup_email")
 
-        # (2) Demande d'accès = BLEU
         create = st.button("Envoyer ma demande d’accès", type="primary")
 
         if create:
@@ -521,7 +528,6 @@ with col_signup:
             st.success("Demande envoyée ✅")
             st.info(f"Tu recevras tes identifiants par email après validation par l’admin ({admin_email}).")
 
-            # optional: clear fields
             for k in ["signup_first_name", "signup_last_name", "signup_email"]:
                 if k in st.session_state:
                     st.session_state[k] = ""
