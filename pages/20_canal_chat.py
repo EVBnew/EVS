@@ -4,7 +4,6 @@ from __future__ import annotations
 from typing import Any, Dict, List, Tuple, Optional
 from datetime import datetime, timezone
 import base64
-import uuid
 import requests
 
 import streamlit as st
@@ -18,34 +17,34 @@ from everskills.services.journal_gsheet import (
     journal_list_learner,
     journal_list_coach,
 )
-from everskills.services.mail_send_once import send_once
 
-# -------------------------------------------------------------------------
+# ---------------------------------------------------------------------
 # Page config (MUST be first Streamlit call)
-# -------------------------------------------------------------------------
+# ---------------------------------------------------------------------
 st.set_page_config(page_title="Canal Chat — EVERSKILLS", layout="wide")
 
-# One page for BOTH roles (mobile-first)
+# Canal chat = 1 seule page pour learner + coach
 require_role({"learner", "coach", "super_admin"})
 
-# -------------------------------------------------------------------------
+# ---------------------------------------------------------------------
 # Auth
-# -------------------------------------------------------------------------
+# ---------------------------------------------------------------------
 user = st.session_state.get("user")
 ok, msg = require_login(user)
 if not ok:
     st.error(msg)
     st.stop()
 
-role = str((user or {}).get("role") or "").strip()
 me_email = (user.get("email") or "").strip().lower()
+me_role = (user.get("role") or "").strip().lower()
+
 if not me_email or "@" not in me_email:
     st.error("Email introuvable (session).")
     st.stop()
 
-# -------------------------------------------------------------------------
-# Constants / helpers
-# -------------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------
 CANAL_PROMPT = "Canal Chat"
 CANAL_PROMPT_KEY = CANAL_PROMPT.lower().strip()
 
@@ -74,6 +73,7 @@ def _esc(s: str) -> str:
 
 
 def _fmt_ts(x: Any) -> str:
+    # created_at expected as epoch seconds (int) but keep fallback
     try:
         if isinstance(x, str) and x.strip().isdigit():
             x = int(x.strip())
@@ -85,19 +85,18 @@ def _fmt_ts(x: Any) -> str:
     return str(x or "").strip()
 
 
-def _thread_key_for_pair(learner_email: str) -> str:
-    # Single thread per learner in Canal Chat
-    return f"{_norm_email(learner_email)}::{CANAL_PROMPT_KEY}"
+def _thread_key_for_learner(email: str) -> str:
+    return f"{_norm_email(email)}::{CANAL_PROMPT_KEY}"
 
 
 def _filter_items_for_thread(
     items: List[Dict[str, Any]],
     thread_key: str,
-    learner_email: str,
-    coach_email: str,
+    learner_email_: str,
+    coach_email_: str,
 ) -> List[Dict[str, Any]]:
-    le = _norm_email(learner_email)
-    ce = _norm_email(coach_email)
+    le = _norm_email(learner_email_)
+    ce = _norm_email(coach_email_)
     out: List[Dict[str, Any]] = []
 
     for it in items:
@@ -113,7 +112,7 @@ def _filter_items_for_thread(
             out.append(it)
             continue
 
-        # Fallback: old chat/canal messages between learner & coach
+        # Fallback: old "chat/canal" messages between learner and coach
         if author in (le, ce) and ("chat" in tags or "canal" in tags):
             out.append(it)
             continue
@@ -129,14 +128,37 @@ def _filter_items_for_thread(
     return sorted(out, key=_sort_key)
 
 
+def _extract_audio_url(body: str) -> Optional[str]:
+    # convention: we store a single line like "AUDIO_URL: <url>"
+    if not body:
+        return None
+    for line in body.splitlines():
+        s = line.strip()
+        if s.lower().startswith("audio_url:"):
+            return s.split(":", 1)[1].strip() or None
+    return None
+
+
 def _bubble(body: str, ts: str, is_me: bool) -> None:
-    # WhatsApp-like bubbles
     align = "flex-end" if is_me else "flex-start"
     bg = "#111827" if is_me else "#F3F4F6"
     color = "white" if is_me else "#111827"
 
-    safe_body = _esc(body).replace("\n", "<br>")
+    audio_url = _extract_audio_url(body)
     safe_ts = _esc(ts)
+
+    # If audio => render player
+    if audio_url:
+        safe_audio = _esc(audio_url)
+        inner = f"""
+<div style="margin-bottom:6px; font-weight:600;">🎙️ Note vocale</div>
+<audio controls style="width: 260px; max-width: 100%;">
+  <source src="{safe_audio}">
+</audio>
+"""
+    else:
+        safe_body = _esc(body).replace("\n", "<br>")
+        inner = f"<div>{safe_body}</div>"
 
     st.markdown(
         f"""
@@ -151,7 +173,7 @@ def _bubble(body: str, ts: str, is_me: bool) -> None:
       line-height:1.35;
       box-shadow: 0 1px 2px rgba(0,0,0,0.06);
   ">
-    <div>{safe_body}</div>
+    {inner}
     <div style="font-size:11px; opacity:0.65; margin-top:6px; text-align:right;">
       {safe_ts}
     </div>
@@ -162,144 +184,74 @@ def _bubble(body: str, ts: str, is_me: bool) -> None:
     )
 
 
-def _is_voice_note(body: str) -> bool:
-    return body.strip().startswith("🎙️ Note vocale")
-
-
-def _extract_drive_urls(body: str) -> Tuple[str, str]:
-    """
-    We store:
-      🎙️ Note vocale
-      Lien: <urlView>
-      Download: <urlDownload>
-    """
-    url_view = ""
-    url_dl = ""
-    for line in (body or "").splitlines():
-        l = line.strip()
-        if l.lower().startswith("lien:"):
-            url_view = l.split(":", 1)[1].strip()
-        if l.lower().startswith("download:"):
-            url_dl = l.split(":", 1)[1].strip()
-    return url_view, url_dl
-
-
-def _render_message(body: str, ts: str, is_me: bool) -> None:
-    if _is_voice_note(body):
-        url_view, url_dl = _extract_drive_urls(body)
-        # bubble header
-        header = "🎙️ Note vocale"
-        _bubble(header, ts, is_me=is_me)
-
-        # audio player (outside bubble, but right under it)
-        # Prefer direct download URL for <audio> src
-        src = url_dl or url_view
-        if src:
-            st.markdown(
-                f"""
-<div style="display:flex; justify-content:{'flex-end' if is_me else 'flex-start'}; margin-top:-4px; margin-bottom:10px;">
-  <audio controls style="max-width:78%;">
-    <source src="{_esc(src)}">
-  </audio>
-</div>
-""",
-                unsafe_allow_html=True,
-            )
-        else:
-            # fallback (no URL)
-            pass
-    else:
-        _bubble(body, ts, is_me=is_me)
-
-
-def _call_apps_script(action: str, payload: dict) -> dict:
-    """
-    Uses same secrets strategy as app.py.
-    Expects secrets:
-      - URL: GSHEET_WEBAPP_URL / APPS_SCRIPT_URL / GSHEET_API_URL / WEBHOOK_URL
-      - SECRET: GSHEET_SHARED_SECRET / SHARED_SECRET / EVS_SECRET
-    """
+def _apps_script_url_and_secret() -> Tuple[str, str]:
     url = (
         st.secrets.get("GSHEET_WEBAPP_URL")
         or st.secrets.get("APPS_SCRIPT_URL")
         or st.secrets.get("GSHEET_API_URL")
         or st.secrets.get("WEBHOOK_URL")
+        or ""
     )
     secret = (
         st.secrets.get("GSHEET_SHARED_SECRET")
         or st.secrets.get("SHARED_SECRET")
         or st.secrets.get("EVS_SECRET")
+        or ""
     )
+    return str(url).strip(), str(secret).strip()
 
+
+def _upload_voice_note(file_name: str, mime: str, b64: str, meta: Dict[str, Any]) -> Dict[str, Any]:
+    url, secret = _apps_script_url_and_secret()
     if not url or not secret:
-        return {"ok": False, "error": "Missing secrets for Apps Script (URL or SECRET).", "data": None}
+        return {"ok": False, "error": "Missing Apps Script URL/SECRET"}
 
-    body = {"secret": secret, "action": action, **payload}
+    payload = {
+        "secret": secret,
+        "action": "upload_voice_note",
+        "file_name": file_name,
+        "mime_type": mime,
+        "data_b64": b64,
+        "meta": meta or {},
+    }
     try:
-        r = requests.post(str(url), json=body, timeout=45)
+        r = requests.post(url, json=payload, timeout=45)
         j = r.json()
-        return j if isinstance(j, dict) else {"ok": False, "error": "Non-JSON response", "data": None}
+        return j if isinstance(j, dict) else {"ok": False, "error": "Non-JSON response"}
     except Exception as e:
-        return {"ok": False, "error": str(e), "data": None}
+        return {"ok": False, "error": str(e)}
 
 
-def _upload_voice_to_drive(audio_bytes: bytes, mime_type: str) -> Tuple[bool, str, str, str]:
-    """
-    Returns (ok, urlView, urlDownload, error)
-    """
-    filename = f"voice_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
-    ext = "webm"
-    if "mpeg" in (mime_type or "") or "mp3" in (mime_type or ""):
-        ext = "mp3"
-    elif "wav" in (mime_type or ""):
-        ext = "wav"
-    elif "mp4" in (mime_type or "") or "m4a" in (mime_type or ""):
-        ext = "m4a"
-    filename = f"{filename}.{ext}"
-
-    b64 = base64.b64encode(audio_bytes).decode("utf-8")
-    res = _call_apps_script(
-        "upload_voice_note",
-        {"filename": filename, "mimeType": mime_type or "audio/webm", "base64Data": b64},
-    )
-    if not res.get("ok"):
-        return False, "", "", str(res.get("error") or "Upload failed")
-
-    data = res.get("data") or {}
-    url_view = str(data.get("urlView") or "")
-    url_dl = str(data.get("urlDownload") or "")
-    return True, url_view, url_dl, ""
-
-
-# -------------------------------------------------------------------------
+# ---------------------------------------------------------------------
 # UI
-# -------------------------------------------------------------------------
+# ---------------------------------------------------------------------
 st.title("💬 Canal Chat")
-st.caption("Conversation directe (mobile-first). Messages + notes vocales (Drive).")
+st.caption("Conversation directe (bulles) + note vocale (sans Drive manuel).")
 
 campaigns = load_campaigns() or []
 campaigns = [c for c in campaigns if isinstance(c, dict)]
 
-# -------------------------------------------------------------------------
-# Determine (camp_id, learner_email, coach_email) based on role
-# -------------------------------------------------------------------------
-camp: Optional[Dict[str, Any]] = None
-camp_id = ""
+# ---------------------------------------------------------------------
+# Resolve context: learner_email + coach_email + camp_id
+# ---------------------------------------------------------------------
 learner_email = ""
 coach_email = ""
+camp_id = ""
 
-if role in ("coach", "admin", "super_admin") and role != "learner":
-    # Coach view: pick a learner
+if me_role in ("coach", "super_admin"):
     my_camps = [
-        c for c in campaigns
-        if _norm_email(str(c.get("coach_email") or "")) == _norm_email(me_email)
+        c
+        for c in campaigns
+        if _norm_email(str(c.get("coach_email") or "")) == me_email
         and _norm_email(str(c.get("learner_email") or ""))
+        and str(c.get("id") or "").strip()
     ]
+
     if not my_camps:
         st.info("Aucune campagne associée à ton email coach.")
         st.stop()
 
-    # Deduplicate learners (keep most recent camp)
+    # Deduplicate learners (keep latest camp per learner)
     by_learner: Dict[str, Dict[str, Any]] = {}
     for c in my_camps:
         le = _norm_email(str(c.get("learner_email") or ""))
@@ -321,74 +273,78 @@ if role in ("coach", "admin", "super_admin") and role != "learner":
     learner_email = learners[int(sel)]
     camp = by_learner[learner_email]
     camp_id = str(camp.get("id") or "").strip()
-    coach_email = _norm_email(me_email)
+    coach_email = me_email
 
 else:
-    # Learner view: pick a campaign
     my_camps = [
-        c for c in campaigns
-        if _norm_email(str(c.get("learner_email") or "")) == _norm_email(me_email)
+        c
+        for c in campaigns
+        if _norm_email(str(c.get("learner_email") or "")) == me_email
         and str(c.get("id") or "").strip()
     ]
     if not my_camps:
         st.info("Aucune campagne. (Le canal s’active une fois une campagne créée.)")
         st.stop()
 
-    labels = [
-        f"{c.get('id','')} — {str(c.get('status') or '')} — {(c.get('objective') or '')[:50]}"
-        for c in my_camps
-    ]
+    labels = [f"{c.get('id','')} — {str(c.get('status') or '')} — {(c.get('objective') or '')[:50]}" for c in my_camps]
     sel = st.selectbox("Choisir une campagne", options=list(range(len(my_camps))), format_func=lambda i: labels[i])
 
     camp = my_camps[int(sel)]
     camp_id = str(camp.get("id") or "").strip()
-    learner_email = _norm_email(me_email)
+
+    learner_email = me_email
     coach_email = _norm_email(str(camp.get("coach_email") or st.session_state.get("evs_coach_email") or ""))
-
     if not coach_email or "@" not in coach_email:
-        st.warning("Email coach non trouvé sur la campagne. Le canal restera en lecture learner uniquement.")
+        st.warning("Email coach non trouvé sur la campagne. (Le canal restera en lecture/écriture learner local.)")
 
-# Thread key is based on learner
-thread_key = _thread_key_for_pair(learner_email)
+thread_key = _thread_key_for_learner(learner_email)
 
 st.divider()
-st.markdown(f"**Campagne :** `{camp_id}`  \n**Learner :** `{learner_email}`  \n**Coach :** `{coach_email or '-'}`")
+st.markdown(
+    f"**Campagne :** `{camp_id}`  \n"
+    f"**Learner :** `{learner_email}`  \n"
+    f"**Coach :** `{coach_email or '-'}`"
+)
 
-# -------------------------------------------------------------------------
-# Load messages (merge learner + coach views so both sides see full history)
-# -------------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# Load messages (merge learner + coach feed)
+# ---------------------------------------------------------------------
 merged: Dict[str, Dict[str, Any]] = {}
 
-# learner feed
+# Learner feed
 try:
-    li = journal_list_learner(learner_email, limit=300)
+    learner_items = journal_list_learner(learner_email, limit=250)
 except Exception as e:
-    st.error(f"Erreur de lecture (learner): {e}")
-    li = []
+    st.error(f"Erreur de lecture (learner feed): {e}")
+    learner_items = []
 
-for it in li or []:
+for it in learner_items:
     if isinstance(it, dict):
         iid = str(it.get("id") or "")
         if iid:
             merged[iid] = it
 
-# coach feed (needed to see coach replies + shared posts)
-ci: List[Dict[str, Any]] = []
+# Coach feed (if coach email exists)
 if coach_email and "@" in coach_email:
     try:
-        ci = journal_list_coach(coach_email, limit=500)
+        coach_items = journal_list_coach(coach_email, limit=400)
     except Exception as e:
         st.error(f"Erreur de lecture (coach feed): {e}")
-        ci = []
-
-    for it in ci or []:
+        coach_items = []
+    for it in coach_items:
         if isinstance(it, dict):
             iid = str(it.get("id") or "")
             if iid and iid not in merged:
                 merged[iid] = it
 
-all_items = list(merged.values())
-items = _filter_items_for_thread(all_items, thread_key=thread_key, learner_email=learner_email, coach_email=coach_email or "")
+items = _filter_items_for_thread(
+    list(merged.values()),
+    thread_key=thread_key,
+    learner_email_=learner_email,
+    coach_email_=coach_email or "",
+)
+
+st.divider()
 
 if not items:
     st.info("Aucun message dans ce canal pour l’instant.")
@@ -397,174 +353,122 @@ else:
         body = str(it.get("body") or "").strip()
         author = _norm_email(str(it.get("author_email") or ""))
         ts = _fmt_ts(it.get("created_at"))
-        if not body:
-            continue
-        is_me = (author == _norm_email(me_email))
-        _render_message(body=body, ts=ts, is_me=is_me)
+        if body:
+            _bubble(body=body, ts=ts, is_me=(author == me_email))
 
 st.divider()
 
-# -------------------------------------------------------------------------
-# Composer
-# -------------------------------------------------------------------------
-is_coach = role in ("coach", "admin", "super_admin") and _norm_email(me_email) == _norm_email(coach_email)
-is_learner = _norm_email(me_email) == _norm_email(learner_email)
+# ---------------------------------------------------------------------
+# Composer (text + voice) — NO EMAIL
+# ---------------------------------------------------------------------
+st.markdown("### ✍️ Écrire / 🎙️ Envoyer une note vocale")
 
-st.markdown("### ✍️ Écrire")
+is_learner = me_role in ("learner", "super_admin") and me_email == learner_email
+is_coach = me_role in ("coach", "super_admin") and me_email == coach_email
+
+# Mood (keep it, as requested)
+mood = st.selectbox(
+    "Énergie du jour",
+    options=MOODS,
+    index=2,
+    key=f"canal_mood_{camp_id}_{me_role}",
+)
 
 # Text message
-mood = None
-if is_learner:
-    mood = st.selectbox("Énergie du jour", options=MOODS, index=2, key=f"canal_mood_{camp_id}")
-
-text_msg = st.text_area(
+message = st.text_area(
     " ",
     height=90,
     placeholder="Écrire un message…",
     label_visibility="collapsed",
-    key=f"msg_{camp_id}_{role}",
+    key=f"canal_msg_{camp_id}_{me_role}",
 )
 
-c1, c2, c3 = st.columns([1, 1, 1])
+# Voice note (direct in-app)
+audio = st.audio_input("🎙️ Note vocale (enregistre puis valide)")
+
+c1, c2 = st.columns([1, 1])
 with c1:
-    share_toggle_label = "Partager au coach" if is_learner else "Partager au learner"
-    share_default = True
-    share_to_other = st.toggle(share_toggle_label, value=share_default, key=f"share_{camp_id}_{role}")
+    share_other_side = st.toggle(
+        "Partager dans le canal",
+        value=True,
+        key=f"share_in_canal_{camp_id}_{me_role}",
+        help="Si OFF : la note reste privée (rarement utile).",
+    )
 with c2:
-    # Email allowed for TEXT only (as requested)
-    send_email_text = st.toggle("Envoyer aussi par email", value=True, key=f"email_{camp_id}_{role}")
-with c3:
-    st.caption("Texte → fil + (option) email")
+    st.caption("Aucun email envoyé (comme demandé).")
 
-# Voice note (no email option)
-st.markdown("### 🎙️ Note vocale (Drive)")
-audio_file = st.file_uploader(
-    " ",
-    type=["webm", "mp3", "wav", "m4a", "mp4", "ogg"],
-    accept_multiple_files=False,
-    label_visibility="collapsed",
-    key=f"audio_{camp_id}_{role}",
-)
-audio_share = st.toggle("Partager dans le fil", value=True, key=f"audio_share_{camp_id}_{role}")
-st.caption("Audio → upload Drive → bulle avec player. (Pas d’email pour l’audio)")
+if st.button("📨 Envoyer", use_container_width=True, key=f"send_btn_{camp_id}_{me_role}"):
+    txt = (message or "").strip()
+    has_audio = audio is not None
 
-b1, b2 = st.columns([1, 1])
-with b1:
-    send_text_btn = st.button("📨 Envoyer texte", use_container_width=True, key=f"send_text_{camp_id}_{role}")
-with b2:
-    send_audio_btn = st.button("🎙️ Envoyer audio", use_container_width=True, key=f"send_audio_{camp_id}_{role}")
-
-# -------------------------------------------------------------------------
-# Send TEXT
-# -------------------------------------------------------------------------
-if send_text_btn:
-    txt = (text_msg or "").strip()
-    if not txt:
+    if not txt and not has_audio:
         st.warning("Message vide.")
-    else:
-        # Determine recipient and validation
-        if is_learner:
-            if share_to_other and (not coach_email or "@" not in coach_email):
-                st.error("Coach email manquant sur la campagne. Impossible de partager.")
-                st.stop()
-            author_email = learner_email
-            other_email = coach_email
-            event_type = "CHAT_LEARNER_MSG"
-            subject = f"[EVERSKILLS] Message learner ({camp_id})"
-        else:
-            # coach/admin
-            if share_to_other and (not learner_email or "@" not in learner_email):
-                st.error("Learner email manquant. Impossible de partager.")
-                st.stop()
-            author_email = coach_email or me_email
-            other_email = learner_email
-            event_type = "CHAT_COACH_REPLY"
-            subject = f"[EVERSKILLS] Message coach ({camp_id})"
+        st.stop()
 
-        body = txt
-        if is_learner and mood:
-            body = f"{mood}\n\n{txt}"
+    # Determine who is "coach" for share_with_coach routing
+    # Storage rule: items appear to coach only if share_with_coach=True and coach_email is set
+    if share_other_side and (not coach_email or "@" not in coach_email):
+        st.error("Coach email manquant sur la campagne. Impossible de partager.")
+        st.stop()
 
-        try:
-            entry = build_entry(
-                author_user_id=str(user.get("id") or user.get("user_id") or author_email),
-                author_email=_norm_email(author_email),
-                body=body,
-                tags=["chat", "canal"],
-                share_with_coach=bool(share_to_other) if is_learner else True,  # coach feed needs it
-                coach_email=_norm_email(coach_email) if (coach_email and "@" in coach_email) else None,
-                prompt=CANAL_PROMPT,
+    try:
+        # 1) If audio: upload via Apps Script (Drive backend invisible)
+        audio_url = None
+        if has_audio:
+            raw = audio.getvalue()
+            mime = getattr(audio, "type", "") or "audio/wav"
+            fname = getattr(audio, "name", "") or f"voice_{camp_id}_{int(datetime.now().timestamp())}.wav"
+            b64 = base64.b64encode(raw).decode("utf-8")
+
+            up = _upload_voice_note(
+                file_name=fname,
+                mime=mime,
+                b64=b64,
+                meta={
+                    "camp_id": camp_id,
+                    "thread_key": thread_key,
+                    "author_email": me_email,
+                    "learner_email": learner_email,
+                    "coach_email": coach_email,
+                },
             )
-            # Force thread_key per learner
-            entry.thread_key = thread_key
-            journal_create(entry)
-
-            # Optional email for TEXT
-            if share_to_other and send_email_text and camp_id:
-                to_email = _norm_email(other_email)
-                if to_email and "@" in to_email:
-                    send_once(
-                        event_key=f"{event_type}:{camp_id}:{entry.id}",
-                        event_type=event_type,
-                        request_id=camp_id,
-                        to_email=to_email,
-                        subject=subject,
-                        text_body=body,
-                        meta={"camp_id": camp_id, "learner_email": learner_email, "coach_email": coach_email},
-                    )
-
-            st.rerun()
-        except Exception as e:
-            st.error(f"Erreur d’envoi: {e}")
-
-# -------------------------------------------------------------------------
-# Send AUDIO (Drive upload -> journal entry with URLs)
-# -------------------------------------------------------------------------
-if send_audio_btn:
-    if not audio_file:
-        st.warning("Aucun fichier audio sélectionné.")
-    elif not audio_share:
-        st.info("Audio non partagé (toggle OFF).")
-    else:
-        # Validate counterpart exists for thread context
-        if is_learner and (not coach_email or "@" not in coach_email):
-            st.error("Coach email manquant sur la campagne. Impossible de partager l’audio.")
-            st.stop()
-        if is_coach and (not learner_email or "@" not in learner_email):
-            st.error("Learner email manquant. Impossible de partager l’audio.")
-            st.stop()
-
-        try:
-            audio_bytes = audio_file.getvalue()
-            mime = getattr(audio_file, "type", None) or "audio/webm"
-
-            ok_up, url_view, url_dl, err = _upload_voice_to_drive(audio_bytes, mime)
-            if not ok_up:
-                st.error(f"Upload Drive KO: {err}")
+            if not up.get("ok"):
+                st.error(f"Upload audio KO: {up.get('error')}")
                 st.stop()
 
-            # Create a journal entry containing the URLs
-            body = "🎙️ Note vocale\n"
-            body += f"Lien: {url_view}\n"
-            body += f"Download: {url_dl}\n"
+            audio_url = str(up.get("audio_url") or "").strip()
+            if not audio_url:
+                st.error("Upload audio KO: audio_url manquant.")
+                st.stop()
 
-            author_email = coach_email if is_coach else learner_email
+        # 2) Build body
+        parts: List[str] = []
+        if mood:
+            parts.append(mood)
 
-            entry = build_entry(
-                author_user_id=str(user.get("id") or user.get("user_id") or author_email),
-                author_email=_norm_email(author_email),
-                body=body.strip(),
-                tags=["chat", "canal", "voice"],
-                share_with_coach=True,  # required so coach feed sees it
-                coach_email=_norm_email(coach_email) if (coach_email and "@" in coach_email) else None,
-                prompt=CANAL_PROMPT,
-            )
-            entry.thread_key = thread_key
-            journal_create(entry)
+        if txt:
+            parts.append(txt)
 
-            # NO EMAIL for audio (as requested)
+        if audio_url:
+            parts.append(f"AUDIO_URL: {audio_url}")
 
-            st.success("Note vocale envoyée ✅")
-            st.rerun()
-        except Exception as e:
-            st.error(f"Erreur audio: {e}")
+        body = "\n\n".join(parts).strip()
+
+        # 3) Persist in Journal (threaded)
+        entry = build_entry(
+            author_user_id=str(user.get("id") or user.get("user_id") or me_email),
+            author_email=me_email,
+            body=body,
+            tags=["chat", "canal", "audio"] if audio_url else ["chat", "canal"],
+            share_with_coach=bool(share_other_side),
+            coach_email=coach_email if share_other_side else None,
+            prompt=CANAL_PROMPT,
+        )
+        entry.thread_key = thread_key
+
+        journal_create(entry)
+
+        st.rerun()
+
+    except Exception as e:
+        st.error(f"Erreur d’envoi: {e}")
