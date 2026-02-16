@@ -11,6 +11,15 @@ import requests
 
 import streamlit as st
 
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent
+
+def safe_page_link(page_path: str, label: str, icon: str):
+    if (REPO_ROOT / page_path).exists():
+        st.page_link(page_path, label=label, icon=icon)
+
+
 # -----------------------------------------------------------------------------
 # Page config (MUST be first Streamlit call)
 # -----------------------------------------------------------------------------
@@ -247,11 +256,12 @@ with st.sidebar:
     st.divider()
 
     st.page_link("app.py", label="Welcome", icon="🏠")
-    st.page_link("pages/03_training.py", label="Mes formations", icon="🎓")
+    safe_page_link("pages/03_training.py", label="Mes formations", icon="🎓")
+
 
     r = _role()
     if r in ("coach", "admin", "super_admin"):
-        st.page_link("pages/01_organization.py", label="Organization", icon="🏢")
+        safe_page_link("pages/03_training.py", label="Mes formations", icon="🎓")
 
     st.divider()
     st.caption("Espaces opérationnels")
