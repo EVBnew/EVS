@@ -418,13 +418,6 @@ else:
 
 thread_key = _thread_key_for_learner(learner_email)
 
-st.divider()
-st.markdown(
-    f"**Campagne :** `{camp_id}`  \n"
-    f"**Learner :** `{learner_email}`  \n"
-    f"**Coach :** `{coach_email or '-'}`  \n"
-    f"**Thread :** `{thread_key}`"
-)
 
 # ---------------------------------------------------------------------
 # Load messages
@@ -492,7 +485,8 @@ message = st.text_area(
     key=f"canal_msg_{camp_id}_{me_role}",
 )
 
-audio = st.audio_input("🎙️ Note vocale (enregistre puis valide)")
+audio = st.file_uploader("🎙️ Note vocale (wav/mp3/webm/m4a)", type=["wav","mp3","webm","m4a"])
+
 
 c1, c2 = st.columns([1, 1])
 with c1:
@@ -519,11 +513,11 @@ if st.button("📨 Envoyer", use_container_width=True, key=f"send_btn_{camp_id}_
 
     try:
         audio_payload: Dict[str, Any] = {}
-        if has_audio:
-            raw = audio.getvalue()
-            mime = getattr(audio, "type", "") or "audio/webm"
-            fname = getattr(audio, "name", "") or f"voice_{camp_id}_{int(datetime.now().timestamp())}.webm"
-            b64 = base64.b64encode(raw).decode("utf-8")
+       if has_audio:
+            raw = audio.read()
+            mime = audio.type or "audio/webm"
+            fname = audio.name or f"voice_{camp_id}_{int(datetime.now().timestamp())}.webm"
+
 
             up = _upload_voice_note(
                 file_name=fname,
