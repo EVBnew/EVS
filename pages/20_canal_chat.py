@@ -1,7 +1,7 @@
 # pages/20_canal_chat.py
 from __future__ import annotations
 
-from typing import Any, Dict, List, Tuple, Optional
+from typing import Any, Dict, List, Tuple
 from datetime import datetime, timezone
 import base64
 import json
@@ -85,15 +85,18 @@ def _thread_key_for_learner(email: str) -> str:
 
 
 def _apps_script_url_and_secret() -> Tuple[str, str]:
+    # compatible avec tes secrets actuels
     url = (
-        st.secrets.get("GSHEET_WEBAPP_URL")
+        st.secrets.get("GSHEET_USERS_WEBAPP_URL")
+        or st.secrets.get("GSHEET_WEBAPP_URL")
         or st.secrets.get("APPS_SCRIPT_URL")
         or st.secrets.get("GSHEET_API_URL")
         or st.secrets.get("WEBHOOK_URL")
         or ""
     )
     secret = (
-        st.secrets.get("GSHEET_SHARED_SECRET")
+        st.secrets.get("GSHEET_USERS_SHARED_SECRET")
+        or st.secrets.get("GSHEET_SHARED_SECRET")
         or st.secrets.get("SHARED_SECRET")
         or st.secrets.get("EVS_SECRET")
         or ""
@@ -107,12 +110,16 @@ def _post_webhook(payload: Dict[str, Any], timeout_s: int = 45) -> Dict[str, Any
         return {"ok": False, "error": "Missing Apps Script URL"}
     try:
         r = requests.post(url, json=payload, timeout=timeout_s)
-        # Toujours tenter JSON: si HTML renvoyé => on remonte une erreur lisible
         try:
             j = r.json()
         except Exception:
             snippet = (r.text or "")[:400]
-            return {"ok": False, "error": "Non-JSON response from webhook", "status": r.status_code, "snippet": snippet}
+            return {
+                "ok": False,
+                "error": "Non-JSON response from webhook",
+                "status": r.status_code,
+                "snippet": snippet,
+            }
         return j if isinstance(j, dict) else {"ok": False, "error": "Non-dict JSON response"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -120,23 +127,36 @@ def _post_webhook(payload: Dict[str, Any], timeout_s: int = 45) -> Dict[str, Any
 
 def _journal_list_for_me(learner_email: str, coach_email: str) -> List[Dict[str, Any]]:
     """
-    On récupère les items visibles pour l'utilisateur courant.
-    - Learner: journal_list_learner(author_email=learner)
+    Récupère les items visibles pour l'utilisateur courant.
     - Coach: journal_list_coach(coach_email=coach)
-    Super admin: selon le rôle effectif (me_role)
+    - Learner: merge journal_list_learner(author_email=learner) + journal_list_coach(coach_email=coach)
+      (permet le flux coach->learner)
     """
     url, secret = _apps_script_url_and_secret()
     if not url or not secret:
         return []
 
-    if me_role in ("coach",) and coach_email and "@" in coach_email:
+    # Coach view
+    if me_role == "coach" and coach_email and "@" in coach_email:
         payload = {"secret": secret, "action": "journal_list_coach", "coach_email": coach_email, "limit": 300}
         j = _post_webhook(payload)
         return list(j.get("items") or []) if j.get("ok") else []
-    else:
-        payload = {"secret": secret, "action": "journal_list_learner", "author_email": learner_email, "limit": 200}
-        j = _post_webhook(payload)
-        return list(j.get("items") or []) if j.get("ok") else []
+
+    # Learner view = merge
+    items: List[Dict[str, Any]] = []
+
+    p1 = {"secret": secret, "action": "journal_list_learner", "author_email": learner_email, "limit": 200}
+    j1 = _post_webhook(p1)
+    if j1.get("ok"):
+        items.extend(list(j1.get("items") or []))
+
+    if coach_email and "@" in coach_email:
+        p2 = {"secret": secret, "action": "journal_list_coach", "coach_email": coach_email, "limit": 300}
+        j2 = _post_webhook(p2)
+        if j2.get("ok"):
+            items.extend(list(j2.get("items") or []))
+
+    return items
 
 
 def _filter_items_for_thread(
@@ -157,12 +177,11 @@ def _filter_items_for_thread(
         author = _norm_email(str(it.get("author_email") or ""))
         tags = [str(t).strip().lower() for t in _as_list(it.get("tags") or [])]
 
-        # Primary: canonical thread_key
         if tk and tk == thread_key:
             out.append(it)
             continue
 
-        # Fallback: old "chat/canal" messages between learner and coach
+        # fallback ancien format
         if author in (le, ce) and ("chat" in tags or "canal" in tags):
             out.append(it)
             continue
@@ -175,14 +194,15 @@ def _filter_items_for_thread(
             ca_i = 0
         return ca_i, str(d.get("id") or "")
 
-    return sorted(out, key=_sort_key)
+    # ✅ ordre: plus ancien -> plus récent (chat standard)
+    return sorted(out, key=_sort_key, reverse=True)
 
 
 def _parse_canonical_body(body: str) -> Dict[str, Any]:
     """
-    Retourne un dict canonique:
+    Canon:
       {type, mood, text, audio:{url,url_alt,mime,file_id}}
-    Rétro-compat:
+    Retro-compat:
       - "[VOICE]: <url>"
       - "AUDIO_URL: <url>"
     """
@@ -209,13 +229,10 @@ def _parse_canonical_body(body: str) -> Dict[str, Any]:
                 }
                 return out
         except Exception:
-            # si JSON invalide, on retombe en texte brut
             out["text"] = body
             return out
 
-    # --- rétro-compat ---
-    # On tolère: mood en première ligne + texte + tag voice
-    # Si on trouve un URL voice, on le sort dans audio.url
+    # rétro-compat
     lines = [ln.strip() for ln in body.splitlines() if ln.strip()]
     mood = lines[0] if lines and lines[0] in MOODS else ""
     if mood:
@@ -223,7 +240,6 @@ def _parse_canonical_body(body: str) -> Dict[str, Any]:
 
     joined = "\n".join(lines).strip()
 
-    # patterns voice
     url = ""
     if "AUDIO_URL:" in joined:
         parts = joined.split("AUDIO_URL:", 1)
@@ -280,14 +296,27 @@ def _bubble_text(text: str, mood: str, ts: str, is_me: bool) -> None:
     )
 
 
-def _bubble_voice(mood: str, text: str, audio_url: str, audio_url_alt: str, ts: str, is_me: bool) -> None:
+@st.cache_data(show_spinner=False, ttl=3600)
+def _fetch_audio_bytes(url: str) -> Tuple[bytes, str]:
+    u = (url or "").strip()
+    if not u:
+        return b"", ""
+    r = requests.get(u, allow_redirects=True, timeout=25)
+    ct = (r.headers.get("Content-Type") or "").lower()
+
+    # Drive renvoie parfois du HTML => KO
+    if "text/html" in ct or (r.content and r.content[:15].lower().startswith(b"<!doctype html")):
+        return b"", ct
+
+    return r.content or b"", ct
+
+
+def _bubble_voice(audio_url: str, audio_url_alt: str, mime: str, ts: str, is_me: bool) -> None:
+    # ✅ pas de vignette / pas d’humeur sur les vocaux
     align = "flex-end" if is_me else "flex-start"
     bg = "#111827" if is_me else "#F3F4F6"
     color = "white" if is_me else "#111827"
-
     safe_ts = _esc(ts)
-    safe_mood = _esc(mood) if mood else ""
-    safe_text = _esc(text).replace("\n", "<br>") if text else ""
 
     st.markdown(
         f"""
@@ -303,26 +332,31 @@ def _bubble_voice(mood: str, text: str, audio_url: str, audio_url_alt: str, ts: 
       box-shadow: 0 1px 2px rgba(0,0,0,0.06);
   ">
     <div style="font-weight:600; margin-bottom:6px;">🎙️ Note vocale</div>
-    {f'<div style="margin-bottom:6px; font-weight:600;">{safe_mood}</div>' if mood else ''}
-    {f'<div style="margin-bottom:8px;">{safe_text}</div>' if text else ''}
+    <div style="font-size:11px; opacity:0.65; margin-top:6px; text-align:right;">
+      {safe_ts}
+    </div>
   </div>
 </div>
 """,
         unsafe_allow_html=True,
     )
 
-    # Player: on privilégie url (Drive media). Si absent, fallback url_alt.
     src = (audio_url or "").strip() or (audio_url_alt or "").strip()
-    if src:
-        st.audio(src)
-        if audio_url_alt and audio_url_alt != src:
-            st.caption("Si le player ne démarre pas, ouvre le lien fallback ci-dessous.")
-            st.link_button("Ouvrir le lien audio (fallback)", audio_url_alt)
-    else:
+    if not src:
         st.error("Audio introuvable (url vide).")
+        return
 
-    # Timestamp en dessous
-    st.caption(safe_ts)
+    data, ct = _fetch_audio_bytes(src)
+    if data:
+        try:
+            st.audio(data, format=(mime or ct or None))
+        except Exception:
+            st.audio(data)
+    else:
+        st.warning("Audio non lisible en live (Drive). Utilise le fallback ci-dessous.")
+
+    if audio_url_alt:
+        st.link_button("Ouvrir le lien audio (fallback)", audio_url_alt)
 
 
 def _upload_voice_note(file_name: str, mime: str, b64: str, meta: Dict[str, Any]) -> Dict[str, Any]:
@@ -338,14 +372,70 @@ def _upload_voice_note(file_name: str, mime: str, b64: str, meta: Dict[str, Any]
         "data_b64": b64,
         "meta": meta or {},
     }
-    return _post_webhook(payload, timeout_s=60)
+    return _post_webhook(payload, timeout_s=90)
+
+
+def _build_structured_text(ok_txt: str, ko_txt: str, learn_txt: str) -> str:
+    ok_txt = (ok_txt or "").strip()
+    ko_txt = (ko_txt or "").strip()
+    learn_txt = (learn_txt or "").strip()
+
+    parts: List[str] = []
+    if ok_txt:
+        parts.append("✅ Ce qui a fonctionné\n" + ok_txt)
+    if ko_txt:
+        parts.append("❌ Ce qui n’a pas marché\n" + ko_txt)
+    if learn_txt:
+        parts.append("💡 Mes enseignements\n" + learn_txt)
+
+    return "\n\n".join(parts).strip()
 
 
 # ---------------------------------------------------------------------
 # UI
 # ---------------------------------------------------------------------
 st.title("💬 Canal Chat")
-st.caption("Conversation directe (bulles) + note vocale (Drive via Apps Script).")
+st.caption("Conversation directe (bulles) + note vocale (lecture live).")
+
+st.markdown(
+    """
+
+<style>
+
+/* Espace en bas pour ne pas masquer les derniers messages */
+.main .block-container{
+  padding-bottom: 360px !important;
+}
+
+/* Composer FIXE en bas (vrai chat) */
+.evs-composer{
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 16px;
+  z-index: 9999;
+  width: min(980px, calc(100vw - 64px));
+  background: rgba(255,255,255,0.96);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(0,0,0,0.10);
+  border-radius: 14px;
+  padding: 12px 12px 6px 12px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+}
+
+/* Dark mode */
+@media (prefers-color-scheme: dark){
+  .evs-composer{
+    background: rgba(15,23,42,0.92);
+    border: 1px solid rgba(255,255,255,0.10);
+  }
+}
+
+</style>
+""",
+    unsafe_allow_html=True,
+)
+
 
 campaigns = load_campaigns() or []
 campaigns = [c for c in campaigns if isinstance(c, dict)]
@@ -370,7 +460,6 @@ if me_role in ("coach", "super_admin"):
         st.info("Aucune campagne associée à ton email coach.")
         st.stop()
 
-    # Deduplicate learners (keep latest camp per learner)
     by_learner: Dict[str, Dict[str, Any]] = {}
     for c in my_camps:
         le = _norm_email(str(c.get("learner_email") or ""))
@@ -418,57 +507,10 @@ else:
 
 thread_key = _thread_key_for_learner(learner_email)
 
-
 # ---------------------------------------------------------------------
-# Load messages
+# Composer (sticky, visible tout le temps)
 # ---------------------------------------------------------------------
-st.divider()
-
-raw_items = _journal_list_for_me(learner_email=learner_email, coach_email=coach_email)
-items = _filter_items_for_thread(
-    raw_items,
-    thread_key=thread_key,
-    learner_email_=learner_email,
-    coach_email_=coach_email or "",
-)
-
-if not items:
-    st.info("Aucun message dans ce canal pour l’instant.")
-else:
-    for it in items:
-        body = str(it.get("body") or "").strip()
-        author = _norm_email(str(it.get("author_email") or ""))
-        ts = _fmt_ts(it.get("created_at"))
-        if not body:
-            continue
-
-        parsed = _parse_canonical_body(body)
-        is_me = (author == me_email)
-
-        if parsed.get("type") == "voice":
-            audio = parsed.get("audio") if isinstance(parsed.get("audio"), dict) else {}
-            _bubble_voice(
-                mood=str(parsed.get("mood") or ""),
-                text=str(parsed.get("text") or ""),
-                audio_url=str(audio.get("url") or ""),
-                audio_url_alt=str(audio.get("url_alt") or ""),
-                ts=ts,
-                is_me=is_me,
-            )
-        else:
-            _bubble_text(
-                text=str(parsed.get("text") or body),
-                mood=str(parsed.get("mood") or ""),
-                ts=ts,
-                is_me=is_me,
-            )
-
-st.divider()
-
-# ---------------------------------------------------------------------
-# Composer (text + voice)
-# ---------------------------------------------------------------------
-st.markdown("### ✍️ Écrire / 🎙️ Envoyer une note vocale")
+st.markdown('<div class="evs-composer">', unsafe_allow_html=True)
 
 mood = st.selectbox(
     "Énergie du jour",
@@ -477,16 +519,30 @@ mood = st.selectbox(
     key=f"canal_mood_{camp_id}_{me_role}",
 )
 
-message = st.text_area(
-    " ",
-    height=90,
-    placeholder="Écrire un message…",
-    label_visibility="collapsed",
-    key=f"canal_msg_{camp_id}_{me_role}",
-)
+colA, colB, colC = st.columns(3)
+with colA:
+    ok_txt = st.text_area(
+        "✅ Ce qui a fonctionné",
+        height=110,
+        key=f"canal_ok_{camp_id}_{me_role}",
+        placeholder="Ex: j’ai gardé mon calme…",
+    )
+with colB:
+    ko_txt = st.text_area(
+        "❌ Ce qui n’a pas marché",
+        height=110,
+        key=f"canal_ko_{camp_id}_{me_role}",
+        placeholder="Ex: j’ai perdu le fil…",
+    )
+with colC:
+    learn_txt = st.text_area(
+        "💡 Mes enseignements",
+        height=110,
+        key=f"canal_learn_{camp_id}_{me_role}",
+        placeholder="Ex: je dois préparer…",
+    )
 
-audio = st.file_uploader("🎙️ Note vocale (wav/mp3/webm/m4a)", type=["wav","mp3","webm","m4a"])
-
+audio = st.audio_input("🎙️ Note vocale (enregistre puis valide)")
 
 c1, c2 = st.columns([1, 1])
 with c1:
@@ -499,11 +555,15 @@ with c1:
 with c2:
     st.caption("Aucun email envoyé.")
 
-if st.button("📨 Envoyer", use_container_width=True, key=f"send_btn_{camp_id}_{me_role}"):
-    txt = (message or "").strip()
+send = st.button("📨 Envoyer", use_container_width=True, key=f"send_btn_{camp_id}_{me_role}")
+
+st.markdown("</div>", unsafe_allow_html=True)
+
+if send:
+    txt_struct = _build_structured_text(ok_txt, ko_txt, learn_txt)
     has_audio = audio is not None
 
-    if not txt and not has_audio:
+    if not txt_struct and not has_audio:
         st.warning("Message vide.")
         st.stop()
 
@@ -513,11 +573,15 @@ if st.button("📨 Envoyer", use_container_width=True, key=f"send_btn_{camp_id}_
 
     try:
         audio_payload: Dict[str, Any] = {}
-       if has_audio:
-            raw = audio.read()
-            mime = audio.type or "audio/webm"
-            fname = audio.name or f"voice_{camp_id}_{int(datetime.now().timestamp())}.webm"
+        if has_audio:
+            raw = audio.getvalue()  # bytes
+            if not raw:
+                st.error("Audio vide (0 byte). Refaire l’enregistrement.")
+                st.stop()
 
+            mime = getattr(audio, "type", "") or "audio/webm"
+            fname = getattr(audio, "name", "") or f"voice_{camp_id}_{int(datetime.now().timestamp())}.webm"
+            b64 = base64.b64encode(raw).decode("utf-8")
 
             up = _upload_voice_note(
                 file_name=fname,
@@ -546,12 +610,11 @@ if st.button("📨 Envoyer", use_container_width=True, key=f"send_btn_{camp_id}_
                 st.error("Upload audio KO: audio_url manquant.")
                 st.stop()
 
-        # Body canonique
         msg_obj = {
             "v": 1,
             "type": "voice" if has_audio else "text",
             "mood": mood or "",
-            "text": txt,
+            "text": txt_struct,
             "audio": audio_payload if has_audio else {},
         }
         body = "EVSMSG:" + json.dumps(msg_obj, ensure_ascii=False)
@@ -572,3 +635,47 @@ if st.button("📨 Envoyer", use_container_width=True, key=f"send_btn_{camp_id}_
 
     except Exception as e:
         st.error(f"Erreur d’envoi: {e}")
+
+# ---------------------------------------------------------------------
+# Messages
+# ---------------------------------------------------------------------
+st.divider()
+
+raw_items = _journal_list_for_me(learner_email=learner_email, coach_email=coach_email)
+items = _filter_items_for_thread(
+    raw_items,
+    thread_key=thread_key,
+    learner_email_=learner_email,
+    coach_email_=coach_email or "",
+)
+
+if not items:
+    st.info("Aucun message dans ce canal pour l’instant.")
+else:
+    for it in items:
+        body = str(it.get("body") or "").strip()
+        author = _norm_email(str(it.get("author_email") or ""))
+        ts = _fmt_ts(it.get("created_at"))
+        if not body:
+            continue
+
+        parsed = _parse_canonical_body(body)
+        is_me = (author == me_email)
+
+        if parsed.get("type") == "voice":
+            audio_d = parsed.get("audio") if isinstance(parsed.get("audio"), dict) else {}
+            _bubble_voice(
+                audio_url=str(audio_d.get("url") or ""),
+                audio_url_alt=str(audio_d.get("url_alt") or ""),
+                mime=str(audio_d.get("mime") or ""),
+                ts=ts,
+                is_me=is_me,
+            )
+        else:
+            _bubble_text(
+                text=str(parsed.get("text") or body),
+                mood=str(parsed.get("mood") or ""),
+                ts=ts,
+                is_me=is_me,
+            )
+
