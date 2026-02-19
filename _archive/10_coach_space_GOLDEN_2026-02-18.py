@@ -118,14 +118,11 @@ def _save_campaign_in_list(campaigns: List[Dict[str, Any]], camp: Dict[str, Any]
 
 
 ACTION_STATUSES = [
-    ("1", "😫 Très difficile"),
-    ("2", "😕 Difficile"),
-    ("3", "🙂 À ma portée"),
-    ("4", "😄 Facile"),
-    ("5", "🤩 Très facile"),
+    ("not_started", "🔴 Pas fait"),
+    ("partial", "🟡 Partiel"),
+    ("done", "🟢 Fait"),
 ]
 ACTION_LABEL = {k: v for k, v in ACTION_STATUSES}
-
 
 
 def _compute_week_completion(week: Dict[str, Any]) -> Tuple[int, int, float]:
@@ -141,13 +138,8 @@ def _compute_week_completion(week: Dict[str, Any]) -> Tuple[int, int, float]:
         if not txt:
             continue
         total += 1
-        try:
-            score = int(str(a.get("status") or "").strip() or "0")
-        except Exception:
-            score = 0
-        if score >= 4:
+        if str(a.get("status") or "").strip() == "done":
             done += 1
-
     pct = (done / total * 100.0) if total > 0 else 0.0
     return done, total, pct
 
@@ -166,35 +158,6 @@ def _compute_global_completion(camp: Dict[str, Any]) -> Tuple[int, int, float]:
         total_total += t
     pct = (done_total / total_total * 100.0) if total_total > 0 else 0.0
     return done_total, total_total, pct
-
-
-def _make_action_id(camp_id: str, week_n: int, seed: str) -> str:
-    base = f"{camp_id}::w{week_n}::{seed}".encode("utf-8", errors="ignore")
-    return "act_" + hashlib.sha1(base).hexdigest()[:16]
-
-
-def _ensure_action_ids(camp: Dict[str, Any]) -> None:
-    camp_id = str(camp.get("id") or "camp").strip()
-    wp = camp.get("weekly_plan") or []
-    if not isinstance(wp, list):
-        return
-
-    for w in wp:
-        if not isinstance(w, dict):
-            continue
-        week_n = int(w.get("week") or 0) or 0
-        actions = w.get("actions") or []
-        if not isinstance(actions, list):
-            actions = []
-        for i, a in enumerate(actions):
-            if not isinstance(a, dict):
-                continue
-            if str(a.get("id") or "").strip():
-                continue
-            txt = str(a.get("text") or "").strip()
-            seed = txt if txt else f"idx:{i}"
-            a["id"] = _make_action_id(camp_id, week_n, seed)
-        w["actions"] = actions
 
 
 def _ensure_weekly_plan(camp: Dict[str, Any]) -> Dict[str, Any]:
@@ -223,19 +186,14 @@ def _ensure_weekly_plan(camp: Dict[str, Any]) -> Dict[str, Any]:
             actions = []
 
         norm_actions: List[Dict[str, Any]] = []
-        for i, a in enumerate(actions):
+        for a in actions:
             if isinstance(a, dict):
-                aid = str(a.get("id") or "").strip()
                 txt = str(a.get("text") or "").strip()
                 stt = str(a.get("status") or "not_started").strip()
                 if txt:
-                    if not aid:
-                        aid = _make_action_id(str(camp.get("id") or "camp"), w, txt)
-                    norm_actions.append({"id": aid, "text": txt, "status": stt})
+                    norm_actions.append({"text": txt, "status": stt})
             elif isinstance(a, str) and a.strip():
-                txt = a.strip()
-                aid = _make_action_id(str(camp.get("id") or "camp"), w, txt)
-                norm_actions.append({"id": aid, "text": txt, "status": "not_started"})
+                norm_actions.append({"text": a.strip(), "status": "not_started"})
 
         norm.append(
             {
@@ -251,8 +209,6 @@ def _ensure_weekly_plan(camp: Dict[str, Any]) -> Dict[str, Any]:
     camp["weekly_plan"] = norm
     camp["kickoff_message"] = str(camp.get("kickoff_message") or "").strip()
     camp["closure_message"] = str(camp.get("closure_message") or "").strip()
-
-    _ensure_action_ids(camp)
     return camp
 
 
@@ -380,8 +336,6 @@ def _sync_weekly_plan_from_program(camp: Dict[str, Any]) -> Tuple[Dict[str, Any]
         return camp, False
 
     changed = False
-    camp_id = str(camp.get("id") or "camp").strip()
-
     for item in wp:
         if not isinstance(item, dict):
             continue
@@ -404,17 +358,11 @@ def _sync_weekly_plan_from_program(camp: Dict[str, Any]) -> Tuple[Dict[str, Any]
         has_any_action = any(isinstance(a, dict) and str(a.get("text") or "").strip() for a in current_actions)
 
         if (not has_any_action) and acts:
-            item["actions"] = [
-                {"id": _make_action_id(camp_id, week_n, a.strip()), "text": a.strip(), "status": "not_started"}
-                for a in acts
-                if a.strip()
-            ]
+            item["actions"] = [{"text": a.strip(), "status": "not_started"} for a in acts if a.strip()]
             changed = True
 
     camp["weekly_plan"] = wp
     camp["weekly_init_program_hash"] = prog_hash
-
-    _ensure_action_ids(camp)
     return camp, changed
 
 
@@ -756,7 +704,7 @@ with col_mid:
                 st.rerun()
 
         st.divider()
-        st.subheader("📈 Suivi learner (lecture + réponse coach + édition programme hebdo)")
+        st.subheader("📈 Suivi learner (lecture + réponse coach)")
 
         done_all, total_all, pct_all = _compute_global_completion(selected_camp)
         st.caption(f"Complétude globale : {pct_all:.0f}% ({done_all}/{total_all} actions faites)")
@@ -769,7 +717,6 @@ with col_mid:
             for w in wp:
                 if not isinstance(w, dict):
                     continue
-
                 week_n = int(w.get("week") or 0) or 0
                 obj_week = str(w.get("objective_week") or f"Semaine {week_n}").strip()
 
@@ -777,69 +724,6 @@ with col_mid:
                 header = f"Semaine {week_n} — {obj_week or 'Objectif non défini'} — {pct:.0f}% ({d}/{t})"
 
                 with st.expander(header, expanded=(week_n == 1)):
-                    # --- Edition programme semaine (CR14-3)
-                    st.markdown("**🛠️ Programme de la semaine (coach peut éditer)**")
-                    obj_key = f"week_obj__{selected_camp.get('id')}__{week_n}"
-                    st.text_input(
-                        "Objectif de la semaine",
-                        value=str(w.get("objective_week") or ""),
-                        key=obj_key,
-                    )
-
-                    actions = w.get("actions") or []
-                    if not isinstance(actions, list):
-                        actions = []
-
-                    remove_idx: Optional[int] = None
-                    st.caption("Actions (liables à post-it / note vocale via action.id)")
-                    for ai, a in enumerate(actions):
-                        if not isinstance(a, dict):
-                            continue
-                        aid = str(a.get("id") or "").strip()
-                        txt = str(a.get("text") or "").strip()
-
-                        row = st.columns([0.08, 0.74, 0.18])
-                        with row[0]:
-                            st.code(aid or "no_id")
-                        with row[1]:
-                            st.text_input(
-                                f"Action {ai+1}",
-                                value=txt,
-                                key=f"week_act_txt__{selected_camp.get('id')}__{week_n}__{ai}",
-                                label_visibility="collapsed",
-                            )
-                        with row[2]:
-                            if st.button("🗑️ Supprimer", key=f"rm_act__{selected_camp.get('id')}__{week_n}__{ai}", use_container_width=True):
-                                remove_idx = ai
-
-                    add_col, _ = st.columns([0.35, 0.65])
-                    with add_col:
-                        if st.button("➕ Ajouter une action", key=f"add_act__{selected_camp.get('id')}__{week_n}", use_container_width=True):
-                            camp_id = str(selected_camp.get("id") or "camp").strip()
-                            new_id = _make_action_id(camp_id, week_n, f"new:{now_iso()}")
-                            actions.append({"id": new_id, "text": "", "status": "not_started"})
-                            w["actions"] = actions
-                            selected_camp["updated_at"] = now_iso()
-                            _append_event(selected_camp, "coach_action_added", actor="coach", payload={"week": week_n, "action_id": new_id})
-                            _save_campaign_in_list(campaigns, selected_camp)
-                            st.rerun()
-
-                    if remove_idx is not None and 0 <= remove_idx < len(actions):
-                        removed = actions.pop(remove_idx)
-                        w["actions"] = actions
-                        selected_camp["updated_at"] = now_iso()
-                        _append_event(
-                            selected_camp,
-                            "coach_action_removed",
-                            actor="coach",
-                            payload={"week": week_n, "action_id": str(removed.get("id") or ""), "text": str(removed.get("text") or "")},
-                        )
-                        _save_campaign_in_list(campaigns, selected_camp)
-                        st.rerun()
-
-                    st.divider()
-
-                    # --- Update learner (lecture)
                     st.markdown("**Update learner**")
                     learner_txt = str(w.get("learner_comment") or "").strip()
                     if learner_txt:
@@ -848,31 +732,32 @@ with col_mid:
                         st.info("(pas de commentaire)")
 
                     st.divider()
-
-                    # --- Note d'ambiance (coach ajuste) — 1..5
-                    st.markdown("**Note d’ambiance (coach ajuste)**")
-                    mood = str(w.get("mood_score") or "").strip()
-                    try:
-                        mood_int = int(mood) if mood else 3
-                    except Exception:
-                        mood_int = 3
-                    mood_int = min(max(mood_int, 1), 5)
-
-                    w["mood_score"] = st.radio(
-                        " ",
-                        options=[1, 2, 3, 4, 5],
-                        index=[1, 2, 3, 4, 5].index(mood_int),
-                        format_func=lambda x: f"{x}",
-                        key=f"coach_week_mood__{selected_camp.get('id')}__{week_n}",
-                        horizontal=True,
-                        label_visibility="collapsed",
-                    )
-
-
+                    st.markdown("**Actions & statut (coach ajuste)**")
+                    actions = w.get("actions") or []
+                    if not isinstance(actions, list) or not actions:
+                        st.caption("Aucune action (initialisation depuis programme).")
+                    else:
+                        for ai, a in enumerate(actions):
+                            if not isinstance(a, dict):
+                                continue
+                            txt = str(a.get("text") or "").strip()
+                            if not txt:
+                                continue
+                            st.write(f"- {txt}")
+                            current = str(a.get("status") or "not_started").strip()
+                            keys = [k for k, _ in ACTION_STATUSES]
+                            idxs = keys.index(current) if current in keys else 0
+                            a["status"] = st.radio(
+                                " ",
+                                options=keys,
+                                index=idxs,
+                                format_func=lambda k: ACTION_LABEL.get(k, k),
+                                key=f"coach_action_{selected_camp.get('id')}_{week_n}_{ai}",
+                                horizontal=True,
+                                label_visibility="collapsed",
+                            )
 
                     st.divider()
-
-                    # --- Réponse coach (visible learner)
                     st.markdown("**Réponse coach (visible learner)**")
                     coach_comment = st.text_area(
                         " ",
@@ -881,22 +766,6 @@ with col_mid:
                         height=90,
                         label_visibility="collapsed",
                     )
-                    st.divider()
-                    closed_at = str(w.get("closed_at") or "").strip()
-                    if closed_at:
-                        st.success(f"✅ Partie {week_n} clôturée ({closed_at})")
-                    else:
-                        if st.button(
-                            f"✅ Clôturer partie {week_n}",
-                            key=f"close_week__{selected_camp.get('id')}__{week_n}",
-                            use_container_width=True,
-                        ):
-                            w["closed_at"] = now_iso()
-                            w["closed_by"] = coach_email
-                            selected_camp["updated_at"] = now_iso()
-                            _append_event(selected_camp, "week_closed", actor="coach", payload={"week": week_n})
-                            _save_campaign_in_list(campaigns, selected_camp)
-                            st.rerun()
 
                     if st.button(
                         "💾 Enregistrer semaine (coach)",
@@ -904,36 +773,9 @@ with col_mid:
                         use_container_width=True,
                     ):
                         now = now_iso()
-                        # mood_score (1..5)
-                        try:
-                            w["mood_score"] = int(w.get("mood_score") or 3)
-                        except Exception:
-                            w["mood_score"] = 3
-                        w["mood_score"] = min(max(int(w["mood_score"]), 1), 5)
-
-                        # 1) persist objective + actions text (edits)
-                        w["objective_week"] = (st.session_state.get(obj_key) or "").strip()
-
-                        acts = w.get("actions") or []
-                        if not isinstance(acts, list):
-                            acts = []
-                        for ai, a in enumerate(acts):
-                            if not isinstance(a, dict):
-                                continue
-                            ktxt = f"week_act_txt__{selected_camp.get('id')}__{week_n}__{ai}"
-                            a["text"] = str(st.session_state.get(ktxt) or "").strip()
-                            if not str(a.get("id") or "").strip():
-                                a["id"] = _make_action_id(str(selected_camp.get("id") or "camp"), week_n, a["text"] or f"idx:{ai}")
-
-                        # remove empty actions (text vide)
-                        acts = [a for a in acts if isinstance(a, dict) and str(a.get("text") or "").strip()]
-                        w["actions"] = acts
-
-                        # 2) persist coach comment + timestamps
                         w["coach_comment"] = coach_comment
                         w["updated_at"] = now
                         selected_camp["updated_at"] = now
-
                         _append_event(selected_camp, "coach_week_saved", actor="coach", payload={"week": week_n})
                         _save_campaign_in_list(campaigns, selected_camp)
 
@@ -990,8 +832,6 @@ with col_right:
             update_request(rid, {"status": "in_progress", "updated_at": now_iso()})
             st.success("Campagne créée ✅")
             st.rerun()
-
-
 
     if selected_camp:
         st.write(f"**Campagne :** `{selected_camp.get('id')}`")

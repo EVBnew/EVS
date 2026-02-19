@@ -1,14 +1,14 @@
 ﻿# app.py
 from __future__ import annotations
 
-BUILD_ID = "1.3"
-BUILD_DATE = "6 février 2026"
+BUILD_ID = "1.1.4"
+BUILD_DATE = "19 février 2026"
 
 import sys
 from pathlib import Path
 import uuid
-import requests
 
+import requests
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -98,6 +98,7 @@ from everskills.services.access import (  # noqa: E402
     find_user,
     issue_session_token,
     load_user_from_session_token,
+    change_password,
 )
 from everskills.services.passwords import hash_password_pbkdf2  # noqa: E402
 from everskills.services.gsheet_access import get_gsheet_api  # noqa: E402
@@ -255,44 +256,30 @@ def _call_apps_script(action: str, payload: dict) -> dict:
 
 
 # -----------------------------------------------------------------------------
-# Sidebar (role-based)
+# Sidebar (role-based) — MINIMAL + NO GOLDEN/LOGS
 # -----------------------------------------------------------------------------
 with st.sidebar:
     st.markdown("## EVERSKILLS")
     st.caption(f"EVERSKILLS · version {BUILD_ID} – {BUILD_DATE}")
     st.divider()
 
-    # Always available
     st.page_link("app.py", label="Welcome", icon="🏠")
-
-    # Hidden-by-default pages: ONLY show if file exists
-    # (avoid crashes if you renamed/removed them)
-    safe_page_link("pages/01_organization.py", label="Organisation", icon="🏢")
-    safe_page_link("pages/02_projects.py", label="Projets", icon="🗂️")
-    safe_page_link("pages/03_training.py", label="Mes formations", icon="🎓")
-    safe_page_link("pages/12_learner_program_chat.py", label="Learner program chat", icon="💬")
 
     r = _role()
 
     st.divider()
-    st.caption("Espaces opérationnels")
+    st.caption("Espaces")
 
     if r in ("learner", "super_admin"):
         safe_page_link("pages/11_learner_space.py", label="Learner Space", icon="🎯")
-        # Canal Chat (learner)
         safe_page_link("pages/20_canal_chat.py", label="Canal Chat", icon="💬")
-        # fallback if you still have the old filename
-        safe_page_link("pages/20_canal_coach.py", label="Canal Chat", icon="💬")
 
     if r in ("coach", "admin", "super_admin"):
         safe_page_link("pages/10_coach_space.py", label="Coach Space", icon="🧠")
-        # Canal Chat (coach)
-        safe_page_link("pages/30_canal_chat_coach.py", label="Canal Chat (coach)", icon="💬")
-        safe_page_link("pages/30_canal_coach_space.py", label="Canal Chat (coach)", icon="💬")
 
-    # Admin (if present)
     if r in ("admin", "super_admin"):
         safe_page_link("pages/90_admin_approvals.py", label="Admin Space", icon="🛠️")
+
 
 # -----------------------------------------------------------------------------
 # WELCOME
@@ -302,8 +289,9 @@ if h1:
 else:
     st.title("WELCOME")
 
-user = st.session_state.get("user")
 st.caption("Propulsé par EVERBOARDING · Upskilling Solutions")
+
+user = st.session_state.get("user")
 
 # Hide sidebar on Welcome when not logged
 if not user:
@@ -326,21 +314,8 @@ if user and st.session_state.get("just_logged_in") is True:
     st.session_state["just_logged_in"] = False
     _route_user(user)
 
-# Already logged
-if user:
-    st.success(f"Connecté : {user.get('email')} — rôle: {user.get('role')}")
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("➡️ Ouvrir mon espace", use_container_width=True, type="primary"):
-            _route_user(user)
-    with c2:
-        if st.button("🚪 Logout", use_container_width=True, type="secondary"):
-            _logout()
-            st.rerun()
-    st.stop()
-
 # -----------------------------------------------------------------------------
-# RESET PASSWORD (token flow)
+# RESET PASSWORD (token flow) — “personnalisation du mot de passe”
 # -----------------------------------------------------------------------------
 def _reset_screen(token: str, email: str) -> None:
     st.subheader("Réinitialiser le mot de passe")
@@ -418,7 +393,50 @@ if reset_token:
     st.stop()
 
 # -----------------------------------------------------------------------------
-# LOGIN / SIGNUP
+# Already logged — “Mon compte” (expander) + actions
+# -----------------------------------------------------------------------------
+if user:
+    st.success(f"Connecté : {user.get('email')} — rôle: {user.get('role')}")
+
+    # Mon compte (rare usage)
+    with st.expander("🔐 Profil", expanded=False):
+        st.caption("Changer ton mot de passe.")
+
+        email_u = str(user.get("email") or "na").strip().lower()
+        role_u = str(user.get("role") or "na").strip().lower()
+        form_key = f"change_password_form_app__{email_u}__{role_u}"
+
+        with st.form(form_key, clear_on_submit=True):
+            old_pw = st.text_input("Mot de passe actuel", type="password")
+            new_pw = st.text_input("Nouveau mot de passe", type="password")
+            confirm_pw = st.text_input("Confirmer le nouveau mot de passe", type="password")
+            submit_pw = st.form_submit_button("Changer mon mot de passe")
+
+        if submit_pw:
+            if not old_pw or not new_pw or not confirm_pw:
+                st.error("Tous les champs sont requis.")
+            elif new_pw != confirm_pw:
+                st.error("Les mots de passe ne correspondent pas.")
+            else:
+                try:
+                    change_password(str(user.get("email") or ""), old_pw, new_pw)
+                    st.success("Mot de passe mis à jour ✅")
+                except Exception as e:
+                    st.error(str(e))
+
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("➡️ Ouvrir mon espace", use_container_width=True, type="primary"):
+            _route_user(user)
+    with c2:
+        if st.button("🚪 Logout", use_container_width=True, type="secondary"):
+            _logout()
+            st.rerun()
+
+    st.stop()
+
+# -----------------------------------------------------------------------------
+# LOGIN / SIGNUP (Welcome)
 # -----------------------------------------------------------------------------
 if "auth_mode" not in st.session_state:
     st.session_state["auth_mode"] = "login"  # or "reset_request"

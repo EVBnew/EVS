@@ -1,13 +1,13 @@
 ﻿# pages/11_learner_space.py
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 import uuid
-from datetime import datetime, timezone
 
 import streamlit as st
 
-from everskills.services.access import require_login, change_password
+from everskills.services.access import require_login
 from everskills.services.storage import (
     load_requests,
     save_requests,
@@ -25,6 +25,13 @@ from everskills.services.journal_gsheet import (
 # CR11: email events (idempotent)
 from everskills.services.mail_send_once import send_once
 
+# CR14-2: voice notes
+from everskills.services.voice_notes import (
+    upload_voice_note_to_drive,
+    transcribe_audio_openai,
+    summarize_transcript_openai,
+    build_voice_note_body,
+)
 
 # -----------------------------------------------------------------------------
 # Page config (MUST be first Streamlit call)
@@ -111,12 +118,28 @@ def _current_week_for_campaign(camp: Dict[str, Any]) -> int:
     return max(1, min(int(wk), int(weeks)))
 
 
+# --- Actions status (CR14-1)
 ACTION_STATUSES = [
-    ("not_started", "🔴 Pas fait"),
-    ("partial", "🟡 Partiel"),
-    ("done", "🟢 Fait"),
+    ("very_hard", "😣 Très difficile"),
+    ("hard", "😕 Difficile"),
+    ("within_reach", "🙂 À ma portée"),
+    ("easy", "😊 Facile"),
+    ("very_easy", "😄 Très facile"),
 ]
 ACTION_LABEL = {k: v for k, v in ACTION_STATUSES}
+_ACTION_KEYS = {k for k, _ in ACTION_STATUSES}
+_OLD_TO_NEW_STATUS = {"not_started": "very_hard", "partial": "within_reach", "done": "very_easy"}
+
+
+def _normalize_action_status(raw: Any) -> str:
+    s = str(raw or "").strip()
+    if not s:
+        return "within_reach"
+    if s in _OLD_TO_NEW_STATUS:
+        return _OLD_TO_NEW_STATUS[s]
+    if s in _ACTION_KEYS:
+        return s
+    return "within_reach"
 
 
 def _upsert_campaign(campaigns: List[Dict[str, Any]], camp: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -162,12 +185,23 @@ def _ensure_weekly_plan(camp: Dict[str, Any]) -> Dict[str, Any]:
         norm_actions: List[Dict[str, Any]] = []
         for a in actions:
             if isinstance(a, dict):
+                aid = str(a.get("id") or "").strip()  # IMPORTANT: keep id (liaison post-it / audio / tags)
                 txt = str(a.get("text") or "").strip()
-                stt = str(a.get("status") or "not_started").strip()
+                stt = _normalize_action_status(a.get("status"))
                 if txt:
-                    norm_actions.append({"text": txt, "status": stt})
+                    item = {"text": txt, "status": stt}
+                    if aid:
+                        item["id"] = aid
+                    norm_actions.append(item)
             elif isinstance(a, str) and a.strip():
-                norm_actions.append({"text": a.strip(), "status": "not_started"})
+                norm_actions.append({"text": a.strip(), "status": "within_reach"})
+
+        # keep optional field for retrocompat (no deletion)
+        mood_score = existing.get("mood_score")
+        try:
+            mood_score_int = int(mood_score) if mood_score is not None and str(mood_score).strip() != "" else None
+        except Exception:
+            mood_score_int = None
 
         norm.append(
             {
@@ -177,6 +211,9 @@ def _ensure_weekly_plan(camp: Dict[str, Any]) -> Dict[str, Any]:
                 "learner_comment": str(existing.get("learner_comment") or "").strip(),
                 "coach_comment": str(existing.get("coach_comment") or "").strip(),
                 "updated_at": str(existing.get("updated_at") or "").strip(),
+                "mood_score": mood_score_int,  # kept
+                "closed": bool(existing.get("closed") or False),
+                "closed_at": str(existing.get("closed_at") or "").strip(),
             }
         )
 
@@ -199,7 +236,8 @@ def _compute_week_completion(week: Dict[str, Any]) -> float:
         if not txt:
             continue
         total += 1
-        if str(a.get("status") or "") == "done":
+        stt = _normalize_action_status(a.get("status"))
+        if stt in ("easy", "very_easy"):
             done += 1
     return (done / total * 100.0) if total else 0.0
 
@@ -242,32 +280,6 @@ def _journal_history_block(learner_email: str) -> None:
 
 
 # ----------------------------
-# CR-04 — Sécurité du compte
-# ----------------------------
-st.divider()
-st.markdown("### 🔐 Sécurité du compte")
-
-with st.container(border=True):
-    with st.form("change_password_form", clear_on_submit=True):
-        old_pw = st.text_input("Mot de passe actuel", type="password")
-        new_pw = st.text_input("Nouveau mot de passe", type="password")
-        confirm_pw = st.text_input("Confirmer le nouveau mot de passe", type="password")
-        submit_pw = st.form_submit_button("Changer mon mot de passe")
-
-    if submit_pw:
-        if not old_pw or not new_pw or not confirm_pw:
-            st.error("Tous les champs sont requis.")
-        elif new_pw != confirm_pw:
-            st.error("Les mots de passe ne correspondent pas.")
-        else:
-            try:
-                change_password(user["email"], old_pw, new_pw)
-                st.success("Mot de passe mis à jour ✅")
-            except Exception as e:
-                st.error(str(e))
-
-
-# ----------------------------
 # UI
 # ----------------------------
 learner_email = _norm_email(user["email"])
@@ -298,7 +310,7 @@ with t1:
         )
 
         weeks = st.number_input(
-            "Durée (semaines)",
+            "Durée (parties)",
             min_value=1,
             max_value=8,
             value=3,
@@ -344,7 +356,7 @@ with t1:
                         "Une nouvelle demande learner a été soumise.\n\n"
                         f"Learner: {learner_email}\n"
                         f"Objectif: {(objective or '').strip()}\n"
-                        f"Durée: {int(weeks)} semaine(s)\n\n"
+                        f"Durée: {int(weeks)} partie(s)\n\n"
                         "Ouvre Admin RH Space pour l’assigner à un coach."
                     ),
                     meta={"learner_email": learner_email, "admin_email": admin_to},
@@ -369,7 +381,7 @@ with t1:
 
 
 # ----------------------------
-# TAB 2: My Plan (Post-It en tête + Weekly intact)
+# TAB 2: My Plan
 # ----------------------------
 with t2:
     st.subheader("📌 Mon plan")
@@ -402,7 +414,7 @@ with t2:
         st.markdown("### Résumé")
         st.write(f"**Objectif :** {camp.get('objective','')}")
         st.write(f"**Contexte :** {camp.get('context','')}")
-        st.write(f"**Semaines :** {camp.get('weeks', 3)}")
+        st.write(f"**Parties :** {camp.get('weeks', 3)}")
         st.write(f"**Statut :** `{camp.get('status','')}`")
 
         pct = _compute_global_completion(camp)
@@ -471,27 +483,186 @@ with t2:
                 st.rerun()
 
     # ----------------------------
-    # RIGHT: Post-it (top) + Weekly (unchanged) + Journal history
+    # RIGHT: Voice note + Post-it + Weekly
     # ----------------------------
     with right:
-        # ---------------------------------------------------------------------
-        # CR12 — POST-IT (accès direct, mobile-first)
-        # - dispo seulement si campagne ACTIVE
-        # - peut s'injecter dans weekly_comment (append, ne remplace pas)
-        # - peut être partagé au coach (email + journal coach)
-        # ---------------------------------------------------------------------
-        st.markdown("### 🗒️ Post-it rapide")
-        st.caption("À la volée. Optionnel : l’insérer dans ta semaine courante et/ou l’envoyer au coach.")
-
         camp_status = str(camp.get("status") or "").strip()
-
-        # Email context
         author_email = learner_email
         author_user_id = str(user.get("user_id") or user.get("id") or author_email or "unknown").strip()
+        coach_default = (
+            str(camp.get("coach_email") or "").strip().lower()
+            or str(st.session_state.get("evs_coach_email") or "").strip().lower()
+        )
 
-        coach_default = str(camp.get("coach_email") or "").strip().lower() or str(
-            st.session_state.get("evs_coach_email") or ""
-        ).strip().lower()
+        # ---------------------------------------------------------------------
+        # CR14-2 — VOICE NOTE (Drive upload OK + OpenAI transcription)
+        # ---------------------------------------------------------------------
+        st.markdown("### 🎙️ Note vocale")
+        st.caption("Enregistre une note vocale (max 120s). Transcription + résumé automatiques. Optionnel : partage au coach.")
+
+        with st.container(border=True):
+            if camp_status != "active":
+                st.info("Note vocale disponible quand la campagne est **ACTIVE**.")
+            else:
+                audio_obj = None
+                if hasattr(st, "audio_input"):
+                    audio_obj = st.audio_input("Enregistrer", key="evs_voice_input")
+                else:
+                    audio_obj = st.file_uploader(
+                        "Uploader un audio (fallback)",
+                        type=["m4a", "mp3", "wav", "webm", "ogg"],
+                        accept_multiple_files=False,
+                        key="evs_voice_upload_fallback",
+                    )
+
+                with st.form("voice_note_form", clear_on_submit=True):
+                    voice_tags = st.text_input("Tags (virgules)", placeholder="ex: réunion, stress, assertivité")
+                    inject_week_voice = st.toggle("Insérer un résumé dans mon Update (partie courante)", value=True)
+                    share_with_coach_voice = st.toggle("Partager au coach", value=False)
+                    coach_email_voice = st.text_input(
+                        "Email coach",
+                        value=coach_default,
+                        disabled=not share_with_coach_voice,
+                        placeholder="coach@email.com",
+                    )
+                    submit_voice = st.form_submit_button("✅ Enregistrer note vocale", use_container_width=True)
+
+                if submit_voice:
+                    if audio_obj is None:
+                        st.error("Aucune note vocale détectée.")
+                    elif share_with_coach_voice and ("@" not in (coach_email_voice or "")):
+                        st.error("Email coach invalide.")
+                    else:
+                        try:
+                            file_name = "voice_note.webm"
+                            mime_type = "audio/webm"
+
+                            audio_bytes = getattr(audio_obj, "getvalue", None)
+                            audio_bytes = audio_bytes() if callable(audio_bytes) else b""
+
+                            file_name = getattr(audio_obj, "name", "") or file_name
+
+                            if not audio_bytes:
+                                st.error("Audio vide.")
+                                st.stop()
+
+                            if len(audio_bytes) > 20 * 1024 * 1024:
+                                st.error("Audio trop lourd (>20MB).")
+                                st.stop()
+
+                            lower = (file_name or "").lower()
+                            if lower.endswith(".m4a"):
+                                mime_type = "audio/mp4"
+                            elif lower.endswith(".mp3"):
+                                mime_type = "audio/mpeg"
+                            elif lower.endswith(".wav"):
+                                mime_type = "audio/wav"
+                            elif lower.endswith(".ogg"):
+                                mime_type = "audio/ogg"
+                            elif lower.endswith(".webm"):
+                                mime_type = "audio/webm"
+
+                            part_n = int(current_week)
+                            cid = str(camp.get("id") or "").strip()
+
+                            with st.spinner("Upload Drive…"):
+                                up = upload_voice_note_to_drive(
+                                    file_name=file_name,
+                                    mime_type=mime_type,
+                                    audio_bytes=audio_bytes,
+                                )
+                            if not up.ok:
+                                st.error(f"Upload Drive KO: {up.error}")
+                                st.stop()
+
+                            with st.spinner("Transcription…"):
+                                transcript = transcribe_audio_openai(
+                                    audio_bytes=audio_bytes,
+                                    file_name=file_name,
+                                    mime_type=mime_type,
+                                    language="fr",
+                                )
+
+                            with st.spinner("Résumé + points saillants…"):
+                                summary, highlights = summarize_transcript_openai(transcript=transcript)
+
+                            body_full = build_voice_note_body(
+                                audio_url=up.audio_url_alt or up.audio_url,
+                                transcript=transcript,
+                                summary=summary,
+                                highlights=highlights,
+                            )
+
+                            entry = build_entry(
+                                author_user_id=author_user_id,
+                                author_email=author_email,
+                                body=body_full,
+                                tags=(voice_tags or "").strip(),
+                                share_with_coach=share_with_coach_voice,
+                                coach_email=coach_email_voice if share_with_coach_voice else None,
+                                prompt="voice-note",
+                            )
+                            journal_create(entry)
+
+                            if inject_week_voice:
+                                wp = camp.get("weekly_plan") or []
+                                if not isinstance(wp, list):
+                                    wp = []
+                                target = next((w for w in wp if isinstance(w, dict) and int(w.get("week") or 0) == part_n), None)
+                                if target is not None:
+                                    old = str(target.get("learner_comment") or "").strip()
+                                    stamp = datetime.now().strftime("%d/%m %H:%M")
+                                    bullets = "\n".join([f"- {b}" for b in (highlights or [])[:6]])
+                                    block = (
+                                        f"🎙️ Note vocale ({stamp})\n"
+                                        f"Audio: {up.audio_url_alt or up.audio_url}\n"
+                                        f"Résumé: {summary}\n"
+                                        f"{('Points:\n' + bullets) if bullets else ''}"
+                                    ).strip()
+
+                                    target["learner_comment"] = (block + "\n\n" + old).strip()
+                                    target["updated_at"] = now_iso()
+                                    camp["updated_at"] = now_iso()
+                                    campaigns = _upsert_campaign(campaigns, camp)
+                                    save_campaigns(campaigns)
+
+                            if share_with_coach_voice and "@" in (coach_email_voice or ""):
+                                to_email = (coach_email_voice or "").strip().lower()
+                                send_once(
+                                    event_key=f"VOICE_SHARED:{cid}:{part_n}:{entry.id}",
+                                    event_type="JOURNAL_SHARED",
+                                    request_id=cid,
+                                    to_email=to_email,
+                                    subject=f"[EVERSKILLS] Note vocale partagée — partie {part_n} ({cid})",
+                                    text_body=(
+                                        f"Le learner {author_email} a partagé une note vocale.\n\n"
+                                        f"Campagne: {cid}\n"
+                                        f"Partie: {part_n}\n"
+                                        f"Audio: {up.audio_url_alt or up.audio_url}\n\n"
+                                        f"Résumé:\n{summary}\n"
+                                    ),
+                                    meta={
+                                        "camp_id": cid,
+                                        "week": part_n,
+                                        "learner_email": author_email,
+                                        "coach_email": to_email,
+                                        "journal_id": entry.id,
+                                        "audio_url": up.audio_url_alt or up.audio_url,
+                                    },
+                                )
+
+                            st.success("Note vocale enregistrée ✅")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erreur note vocale: {e}")
+
+        st.divider()
+
+        # ---------------------------------------------------------------------
+        # CR12 — POST-IT
+        # ---------------------------------------------------------------------
+        st.markdown("### 🗒️ Post-it rapide")
+        st.caption("À la volée. Optionnel : l’insérer dans la partie courante et/ou l’envoyer au coach.")
 
         with st.container(border=True):
             if camp_status != "active":
@@ -513,7 +684,7 @@ with t2:
                     ps_learning = st.text_area("Apprentissage", height=80, placeholder="Ce que je retiens…")
                     ps_tags = st.text_input("Tags (virgules)", placeholder="ex: focus, respiration, assertivité")
 
-                    inject_week = st.toggle("Insérer aussi dans mon Weekly Update (semaine courante)", value=True)
+                    inject_week = st.toggle("Insérer aussi dans mon Update (partie courante)", value=True)
                     share_with_coach = st.toggle("Envoyer au coach", value=False)
 
                     coach_email_for_share = st.text_input(
@@ -532,7 +703,7 @@ with t2:
                         st.error("Email coach invalide.")
                     else:
                         now = now_iso()
-                        week_n = int(current_week)
+                        part_n = int(current_week)
 
                         body = (
                             f"Énergie: {mood}\n\n"
@@ -553,46 +724,39 @@ with t2:
                             )
                             journal_create(entry)
 
-                            # Inject into weekly comment (append only)
                             if inject_week:
                                 wp = camp.get("weekly_plan") or []
                                 if not isinstance(wp, list):
                                     wp = []
-                                target_week = None
-                                for w in wp:
-                                    if isinstance(w, dict) and int(w.get("week") or 0) == week_n:
-                                        target_week = w
-                                        break
-                                if target_week is not None:
-                                    old = str(target_week.get("learner_comment") or "").strip()
+                                target = next((w for w in wp if isinstance(w, dict) and int(w.get("week") or 0) == part_n), None)
+                                if target is not None:
+                                    old = str(target.get("learner_comment") or "").strip()
                                     stamp = datetime.now().strftime("%d/%m %H:%M")
                                     block = f"🟨 Post-it ({stamp})\n{body.strip()}\n"
-                                    target_week["learner_comment"] = (block + "\n\n" + old).strip()
-                                    target_week["updated_at"] = now
+                                    target["learner_comment"] = (block + "\n\n" + old).strip()
+                                    target["updated_at"] = now
                                     camp["updated_at"] = now
-
                                     campaigns = _upsert_campaign(campaigns, camp)
                                     save_campaigns(campaigns)
 
-                            # Email coach (immediate)
                             if share_with_coach and "@" in coach_email_for_share:
                                 cid = str(camp.get("id") or "").strip()
                                 to_email = coach_email_for_share.strip().lower()
                                 send_once(
-                                    event_key=f"JOURNAL_SHARED:{cid}:{week_n}:{entry.id}",
+                                    event_key=f"JOURNAL_SHARED:{cid}:{part_n}:{entry.id}",
                                     event_type="JOURNAL_SHARED",
                                     request_id=cid,
                                     to_email=to_email,
-                                    subject=f"[EVERSKILLS] Post-it partagé — semaine {week_n} ({cid})",
+                                    subject=f"[EVERSKILLS] Post-it partagé — partie {part_n} ({cid})",
                                     text_body=(
                                         f"Le learner {author_email} a partagé un post-it.\n\n"
                                         f"Campagne: {cid}\n"
-                                        f"Semaine: {week_n}\n\n"
+                                        f"Partie: {part_n}\n\n"
                                         f"{body}"
                                     ),
                                     meta={
                                         "camp_id": cid,
-                                        "week": week_n,
+                                        "week": part_n,
                                         "learner_email": author_email,
                                         "coach_email": to_email,
                                         "journal_id": entry.id,
@@ -606,30 +770,35 @@ with t2:
 
         st.divider()
 
-        # --------------------------------------
-        # SUIVI HEBDO (inchangé)
-        # --------------------------------------
-        st.markdown("### Suivi hebdo")
+        # ---------------------------------------------------------------------
+        # Update (actions only)
+        # ---------------------------------------------------------------------
+        st.markdown("### Suivi")
 
         wp = camp.get("weekly_plan") or []
         if not isinstance(wp, list) or not wp:
-            st.info("Aucun suivi hebdo disponible.")
+            st.info("Aucun suivi disponible.")
         else:
             for w in wp:
                 if not isinstance(w, dict):
                     continue
 
-                week_n = int(w.get("week") or 0) or 0
-                obj_week = str(w.get("objective_week") or f"Semaine {week_n}").strip()
+                part_n = int(w.get("week") or 0) or 0
+                obj_part = str(w.get("objective_week") or f"Partie {part_n}").strip()
 
                 pctw = _compute_week_completion(w)
                 with st.expander(
-                    f"Semaine {week_n} — {obj_week or 'Objectif non défini'} — {pctw:.0f}%",
-                    expanded=(week_n == current_week),
+                    f"Partie {part_n} — {obj_part or 'Objectif non défini'} — {pctw:.0f}%",
+                    expanded=(part_n == current_week),
                 ):
-                    st.markdown("**Objectif de la semaine**")
-                    if obj_week:
-                        st.write(obj_week)
+                    if bool(w.get("closed") or False):
+                        closed_at = str(w.get("closed_at") or "").strip()
+                        stamp = "✅ Partie clôturée" + (f" — {closed_at[:10]}" if closed_at else "")
+                        st.success(stamp)
+
+                    st.markdown("**Objectif de la partie**")
+                    if obj_part:
+                        st.write(obj_part)
                     else:
                         st.warning("Objectif non défini.")
 
@@ -646,19 +815,27 @@ with t2:
                             txt = str(a.get("text") or "").strip()
                             if not txt:
                                 continue
+
+                            aid = str(a.get("id") or "").strip()
+                            if aid:
+                                st.caption(f"action_id: `{aid}`")
+
                             st.write(f"- {txt}")
 
-                            current = str(a.get("status") or "not_started").strip()
+                            current = _normalize_action_status(a.get("status"))
                             keys = [k for k, _ in ACTION_STATUSES]
-                            idxs = keys.index(current) if current in keys else 0
+                            idxs = keys.index(current) if current in keys else 2
+
+                            key_id = aid or f"idx_{ai}"
                             new_status = st.radio(
                                 " ",
                                 options=keys,
                                 index=idxs,
                                 format_func=lambda k: ACTION_LABEL.get(k, k),
-                                key=f"learner_action_{camp.get('id')}_{week_n}_{ai}",
+                                key=f"learner_action__{camp.get('id')}__{part_n}__{key_id}",
                                 horizontal=True,
                                 label_visibility="collapsed",
+                                disabled=bool(w.get("closed") or False),
                             )
                             a["status"] = new_status
 
@@ -667,10 +844,11 @@ with t2:
                     comment = st.text_area(
                         " ",
                         value=str(w.get("learner_comment") or ""),
-                        key=f"learner_comment_{camp.get('id')}_{week_n}",
+                        key=f"learner_comment_{camp.get('id')}_{part_n}",
                         height=90,
                         placeholder="Ex: j’ai fait l’action 1, pas eu le temps pour l’action 2.",
                         label_visibility="collapsed",
+                        disabled=bool(w.get("closed") or False),
                     )
 
                     coach_comment = str(w.get("coach_comment") or "").strip()
@@ -680,8 +858,9 @@ with t2:
 
                     if st.button(
                         "💾 Enregistrer mon update",
-                        key=f"save_learner_week_{camp.get('id')}_{week_n}",
+                        key=f"save_learner_part_{camp.get('id')}_{part_n}",
                         use_container_width=True,
+                        disabled=bool(w.get("closed") or False),
                     ):
                         now = now_iso()
                         w["actions"] = actions
@@ -695,17 +874,21 @@ with t2:
                         cid = str(camp.get("id") or "").strip()
                         coach_email = str(camp.get("coach_email") or "").strip().lower() or "admin@everboarding.fr"
                         send_once(
-                            event_key=f"LEARNER_UPDATE:{cid}:{week_n}:{now}",
+                            event_key=f"LEARNER_UPDATE:{cid}:{part_n}:{now}",
                             event_type="LEARNER_UPDATE",
                             request_id=cid,
                             to_email=coach_email,
-                            subject=f"[EVERSKILLS] Update semaine {week_n} ({cid})",
-                            text_body=f"Update learner (semaine {week_n}).\n\nLearner: {learner_email}\n\n{comment}",
-                            meta={"camp_id": cid, "week": week_n, "learner_email": learner_email},
+                            subject=f"[EVERSKILLS] Update partie {part_n} ({cid})",
+                            text_body=f"Update learner (partie {part_n}).\n\nLearner: {learner_email}\n\n{comment}",
+                            meta={"camp_id": cid, "week": part_n, "learner_email": learner_email},
                         )
 
                         st.success("OK ✅")
                         st.rerun()
 
-        st.divider()
-        _journal_history_block(learner_email)
+        # ---------------------------------------------------------------------
+        # Mask journal history (CR14-2)
+        # ---------------------------------------------------------------------
+        # (intentionally hidden)
+        # st.divider()
+        # _journal_history_block(learner_email)
