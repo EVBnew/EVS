@@ -16,22 +16,9 @@ from everskills.services.storage import (
     now_iso,
 )
 from everskills.services.guard import require_role
-from everskills.services.journal_gsheet import (
-    build_entry,
-    journal_create,
-    journal_list_learner,
-)
 
 # CR11: email events (idempotent)
 from everskills.services.mail_send_once import send_once
-
-# CR14-2: voice notes
-from everskills.services.voice_notes import (
-    upload_voice_note_to_drive,
-    transcribe_audio_openai,
-    summarize_transcript_openai,
-    build_voice_note_body,
-)
 
 # -----------------------------------------------------------------------------
 # Page config (MUST be first Streamlit call)
@@ -72,12 +59,6 @@ def _norm_email(s: str) -> str:
 
 
 def _admin_rh_email() -> str:
-    """
-    Routing #0:
-    - ADMIN_EMAIL (prioritaire)
-    - ACCESS_ADMIN_EMAIL (fallback)
-    - hard fallback: contact@
-    """
     v = str(st.secrets.get("ADMIN_EMAIL") or "").strip()
     if v:
         return v
@@ -100,7 +81,6 @@ def _parse_iso_dt(s: str) -> Optional[datetime]:
 
 
 def _current_week_for_campaign(camp: Dict[str, Any]) -> int:
-    """Week number based on activated_at/created_at. Fallback week=1."""
     try:
         weeks = int(camp.get("weeks") or 1)
     except Exception:
@@ -129,6 +109,7 @@ ACTION_STATUSES = [
 ACTION_LABEL = {k: v for k, v in ACTION_STATUSES}
 _ACTION_KEYS = {k for k, _ in ACTION_STATUSES}
 _OLD_TO_NEW_STATUS = {"not_started": "very_hard", "partial": "within_reach", "done": "very_easy"}
+DRAFT_ACTION_PLACEHOLDER = "⏳ Action en cours de rédaction par le coach."
 
 
 def _normalize_action_status(raw: Any) -> str:
@@ -158,6 +139,10 @@ def _upsert_campaign(campaigns: List[Dict[str, Any]], camp: Dict[str, Any]) -> L
 
 
 def _ensure_weekly_plan(camp: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    CR14: on conserve les actions vides si elles ont un id (slot ajouté par coach).
+    => permet de rendre visible côté learner dès que le coach clique "Ajouter action".
+    """
     try:
         weeks = int(camp.get("weeks") or 3)
     except Exception:
@@ -185,18 +170,19 @@ def _ensure_weekly_plan(camp: Dict[str, Any]) -> Dict[str, Any]:
         norm_actions: List[Dict[str, Any]] = []
         for a in actions:
             if isinstance(a, dict):
-                aid = str(a.get("id") or "").strip()  # IMPORTANT: keep id (liaison post-it / audio / tags)
-                txt = str(a.get("text") or "").strip()
+                aid = str(a.get("id") or "").strip()
+                txt = str(a.get("text") or "")
                 stt = _normalize_action_status(a.get("status"))
-                if txt:
-                    item = {"text": txt, "status": stt}
-                    if aid:
-                        item["id"] = aid
-                    norm_actions.append(item)
+
+                # garder action vide si id
+                item = {"status": stt, "text": txt}
+                if aid:
+                    item["id"] = aid
+                norm_actions.append(item)
+
             elif isinstance(a, str) and a.strip():
                 norm_actions.append({"text": a.strip(), "status": "within_reach"})
 
-        # keep optional field for retrocompat (no deletion)
         mood_score = existing.get("mood_score")
         try:
             mood_score_int = int(mood_score) if mood_score is not None and str(mood_score).strip() != "" else None
@@ -211,7 +197,7 @@ def _ensure_weekly_plan(camp: Dict[str, Any]) -> Dict[str, Any]:
                 "learner_comment": str(existing.get("learner_comment") or "").strip(),
                 "coach_comment": str(existing.get("coach_comment") or "").strip(),
                 "updated_at": str(existing.get("updated_at") or "").strip(),
-                "mood_score": mood_score_int,  # kept
+                "mood_score": mood_score_int,
                 "closed": bool(existing.get("closed") or False),
                 "closed_at": str(existing.get("closed_at") or "").strip(),
             }
@@ -255,30 +241,6 @@ def _compute_global_completion(camp: Dict[str, Any]) -> float:
     return (total_pct / count) if count else 0.0
 
 
-def _journal_history_block(learner_email: str) -> None:
-    st.subheader("Journal — historique")
-    st.caption("Tes notes (récent → ancien).")
-    try:
-        items = journal_list_learner(learner_email, limit=50)
-    except Exception as e:
-        st.error(f"Erreur de lecture journal: {e}")
-        items = []
-
-    if not items:
-        st.info("Aucune note pour l’instant.")
-        return
-
-    for it in items[:20]:
-        shared = bool(it.get("share_with_coach"))
-        ts = it.get("created_at") or ""
-        tags_list = it.get("tags") or []
-        header = ("✅ Partagé" if shared else "🔒 Privé") + f" — {ts}"
-        with st.expander(header, expanded=False):
-            if tags_list:
-                st.write("**Tags :** " + ", ".join([str(t) for t in tags_list]))
-            st.text(it.get("body") or "")
-
-
 # ----------------------------
 # UI
 # ----------------------------
@@ -287,8 +249,9 @@ learner_email = _norm_email(user["email"])
 st.title("🎯 Learner Space")
 st.caption("Demande → plan → exécution → update → feedback coach")
 
-t1, t2 = st.tabs(["📝 Ma demande", "📌 Mon plan"])
+st.info("💬 Post-it & note vocale : **Menu → Canal Chat** (page dédiée).")
 
+t1, t2 = st.tabs(["📝 Ma demande", "📌 Mon plan"])
 
 # ----------------------------
 # TAB 1: Request
@@ -297,34 +260,20 @@ with t1:
     st.subheader("📝 Soumettre une demande")
 
     with st.form("learner_request_form", clear_on_submit=False):
-        objective = st.text_input(
-            "Objectif",
-            placeholder="Ex: gagner en assertivité en réunion",
-            max_chars=200,
-        )
-
+        objective = st.text_input("Objectif", placeholder="Ex: gagner en assertivité en réunion", max_chars=200)
         context = st.text_area(
             "Contexte",
             height=120,
             placeholder="Décris la situation, ce que tu veux changer, la contrainte, etc.",
         )
-
-        weeks = st.number_input(
-            "Durée (parties)",
-            min_value=1,
-            max_value=8,
-            value=3,
-            step=1,
-        )
-
+        weeks = st.number_input("Durée (parties)", min_value=1, max_value=8, value=3, step=1)
         submitted = st.form_submit_button("📨 Envoyer la demande")
 
     if submitted:
         if not (objective or "").strip():
             st.error("Objectif obligatoire.")
         else:
-            requests = load_requests() or []
-            requests = [r for r in requests if isinstance(r, dict)]
+            requests = [r for r in (load_requests() or []) if isinstance(r, dict)]
 
             rid = f"req_{uuid.uuid4().hex[:10]}"
             req = {
@@ -379,15 +328,13 @@ with t1:
         for r in my_reqs[:6]:
             st.write(f"- `{r.get('status','')}` — {r.get('objective','')[:80]} — {r.get('id','')}")
 
-
 # ----------------------------
 # TAB 2: My Plan
 # ----------------------------
 with t2:
     st.subheader("📌 Mon plan")
 
-    campaigns = load_campaigns() or []
-    campaigns = [c for c in campaigns if isinstance(c, dict)]
+    campaigns = [c for c in (load_campaigns() or []) if isinstance(c, dict)]
     my_campaigns = [
         c
         for c in campaigns
@@ -404,11 +351,12 @@ with t2:
 
     camp = _ensure_weekly_plan(my_campaigns[idx])
     current_week = _current_week_for_campaign(camp)
+    camp_id = str(camp.get("id") or "").strip()
 
     left, right = st.columns([1.05, 1.95], gap="large")
 
     # ----------------------------
-    # LEFT: Summary
+    # LEFT
     # ----------------------------
     with left:
         st.markdown("### Résumé")
@@ -483,297 +431,12 @@ with t2:
                 st.rerun()
 
     # ----------------------------
-    # RIGHT: Voice note + Post-it + Weekly
+    # RIGHT
     # ----------------------------
     with right:
         camp_status = str(camp.get("status") or "").strip()
-        author_email = learner_email
-        author_user_id = str(user.get("user_id") or user.get("id") or author_email or "unknown").strip()
-        coach_default = (
-            str(camp.get("coach_email") or "").strip().lower()
-            or str(st.session_state.get("evs_coach_email") or "").strip().lower()
-        )
 
-        # ---------------------------------------------------------------------
-        # CR14-2 — VOICE NOTE (Drive upload OK + OpenAI transcription)
-        # ---------------------------------------------------------------------
-        st.markdown("### 🎙️ Note vocale")
-        st.caption("Enregistre une note vocale (max 120s). Transcription + résumé automatiques. Optionnel : partage au coach.")
-
-        with st.container(border=True):
-            if camp_status != "active":
-                st.info("Note vocale disponible quand la campagne est **ACTIVE**.")
-            else:
-                audio_obj = None
-                if hasattr(st, "audio_input"):
-                    audio_obj = st.audio_input("Enregistrer", key="evs_voice_input")
-                else:
-                    audio_obj = st.file_uploader(
-                        "Uploader un audio (fallback)",
-                        type=["m4a", "mp3", "wav", "webm", "ogg"],
-                        accept_multiple_files=False,
-                        key="evs_voice_upload_fallback",
-                    )
-
-                with st.form("voice_note_form", clear_on_submit=True):
-                    voice_tags = st.text_input("Tags (virgules)", placeholder="ex: réunion, stress, assertivité")
-                    inject_week_voice = st.toggle("Insérer un résumé dans mon Update (partie courante)", value=True)
-                    share_with_coach_voice = st.toggle("Partager au coach", value=False)
-                    coach_email_voice = st.text_input(
-                        "Email coach",
-                        value=coach_default,
-                        disabled=not share_with_coach_voice,
-                        placeholder="coach@email.com",
-                    )
-                    submit_voice = st.form_submit_button("✅ Enregistrer note vocale", use_container_width=True)
-
-                if submit_voice:
-                    if audio_obj is None:
-                        st.error("Aucune note vocale détectée.")
-                    elif share_with_coach_voice and ("@" not in (coach_email_voice or "")):
-                        st.error("Email coach invalide.")
-                    else:
-                        try:
-                            file_name = "voice_note.webm"
-                            mime_type = "audio/webm"
-
-                            audio_bytes = getattr(audio_obj, "getvalue", None)
-                            audio_bytes = audio_bytes() if callable(audio_bytes) else b""
-
-                            file_name = getattr(audio_obj, "name", "") or file_name
-
-                            if not audio_bytes:
-                                st.error("Audio vide.")
-                                st.stop()
-
-                            if len(audio_bytes) > 20 * 1024 * 1024:
-                                st.error("Audio trop lourd (>20MB).")
-                                st.stop()
-
-                            lower = (file_name or "").lower()
-                            if lower.endswith(".m4a"):
-                                mime_type = "audio/mp4"
-                            elif lower.endswith(".mp3"):
-                                mime_type = "audio/mpeg"
-                            elif lower.endswith(".wav"):
-                                mime_type = "audio/wav"
-                            elif lower.endswith(".ogg"):
-                                mime_type = "audio/ogg"
-                            elif lower.endswith(".webm"):
-                                mime_type = "audio/webm"
-
-                            part_n = int(current_week)
-                            cid = str(camp.get("id") or "").strip()
-
-                            with st.spinner("Upload Drive…"):
-                                up = upload_voice_note_to_drive(
-                                    file_name=file_name,
-                                    mime_type=mime_type,
-                                    audio_bytes=audio_bytes,
-                                )
-                            if not up.ok:
-                                st.error(f"Upload Drive KO: {up.error}")
-                                st.stop()
-
-                            with st.spinner("Transcription…"):
-                                transcript = transcribe_audio_openai(
-                                    audio_bytes=audio_bytes,
-                                    file_name=file_name,
-                                    mime_type=mime_type,
-                                    language="fr",
-                                )
-
-                            with st.spinner("Résumé + points saillants…"):
-                                summary, highlights = summarize_transcript_openai(transcript=transcript)
-
-                            body_full = build_voice_note_body(
-                                audio_url=up.audio_url_alt or up.audio_url,
-                                transcript=transcript,
-                                summary=summary,
-                                highlights=highlights,
-                            )
-
-                            entry = build_entry(
-                                author_user_id=author_user_id,
-                                author_email=author_email,
-                                body=body_full,
-                                tags=(voice_tags or "").strip(),
-                                share_with_coach=share_with_coach_voice,
-                                coach_email=coach_email_voice if share_with_coach_voice else None,
-                                prompt="voice-note",
-                            )
-                            journal_create(entry)
-
-                            if inject_week_voice:
-                                wp = camp.get("weekly_plan") or []
-                                if not isinstance(wp, list):
-                                    wp = []
-                                target = next((w for w in wp if isinstance(w, dict) and int(w.get("week") or 0) == part_n), None)
-                                if target is not None:
-                                    old = str(target.get("learner_comment") or "").strip()
-                                    stamp = datetime.now().strftime("%d/%m %H:%M")
-                                    bullets = "\n".join([f"- {b}" for b in (highlights or [])[:6]])
-                                    block = (
-                                        f"🎙️ Note vocale ({stamp})\n"
-                                        f"Audio: {up.audio_url_alt or up.audio_url}\n"
-                                        f"Résumé: {summary}\n"
-                                        f"{('Points:\n' + bullets) if bullets else ''}"
-                                    ).strip()
-
-                                    target["learner_comment"] = (block + "\n\n" + old).strip()
-                                    target["updated_at"] = now_iso()
-                                    camp["updated_at"] = now_iso()
-                                    campaigns = _upsert_campaign(campaigns, camp)
-                                    save_campaigns(campaigns)
-
-                            if share_with_coach_voice and "@" in (coach_email_voice or ""):
-                                to_email = (coach_email_voice or "").strip().lower()
-                                send_once(
-                                    event_key=f"VOICE_SHARED:{cid}:{part_n}:{entry.id}",
-                                    event_type="JOURNAL_SHARED",
-                                    request_id=cid,
-                                    to_email=to_email,
-                                    subject=f"[EVERSKILLS] Note vocale partagée — partie {part_n} ({cid})",
-                                    text_body=(
-                                        f"Le learner {author_email} a partagé une note vocale.\n\n"
-                                        f"Campagne: {cid}\n"
-                                        f"Partie: {part_n}\n"
-                                        f"Audio: {up.audio_url_alt or up.audio_url}\n\n"
-                                        f"Résumé:\n{summary}\n"
-                                    ),
-                                    meta={
-                                        "camp_id": cid,
-                                        "week": part_n,
-                                        "learner_email": author_email,
-                                        "coach_email": to_email,
-                                        "journal_id": entry.id,
-                                        "audio_url": up.audio_url_alt or up.audio_url,
-                                    },
-                                )
-
-                            st.success("Note vocale enregistrée ✅")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Erreur note vocale: {e}")
-
-        st.divider()
-
-        # ---------------------------------------------------------------------
-        # CR12 — POST-IT
-        # ---------------------------------------------------------------------
-        st.markdown("### 🗒️ Post-it rapide")
-        st.caption("À la volée. Optionnel : l’insérer dans la partie courante et/ou l’envoyer au coach.")
-
-        with st.container(border=True):
-            if camp_status != "active":
-                st.info("Post-it disponible quand la campagne est **ACTIVE**.")
-            else:
-                with st.form("postit_quick_form", clear_on_submit=True):
-                    mood = st.selectbox(
-                        "Émotion / énergie",
-                        options=["🟢 En confiance", "🔵 Flow", "🟡 Neutre", "🟠 Tendu", "🔴 Fatigué"],
-                        index=2,
-                    )
-
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        ps_success = st.text_area("Succès", height=80, placeholder="Ce qui a marché…")
-                    with c2:
-                        ps_difficulty = st.text_area("Difficulté", height=80, placeholder="Ce qui a bloqué…")
-
-                    ps_learning = st.text_area("Apprentissage", height=80, placeholder="Ce que je retiens…")
-                    ps_tags = st.text_input("Tags (virgules)", placeholder="ex: focus, respiration, assertivité")
-
-                    inject_week = st.toggle("Insérer aussi dans mon Update (partie courante)", value=True)
-                    share_with_coach = st.toggle("Envoyer au coach", value=False)
-
-                    coach_email_for_share = st.text_input(
-                        "Email coach",
-                        value=coach_default,
-                        disabled=not share_with_coach,
-                        placeholder="coach@email.com",
-                    )
-
-                    submitted_postit = st.form_submit_button("✅ Enregistrer Post-it", use_container_width=True)
-
-                if submitted_postit:
-                    if not (ps_success.strip() or ps_difficulty.strip() or ps_learning.strip()):
-                        st.error("Renseigne au moins une section (Succès / Difficulté / Apprentissage).")
-                    elif share_with_coach and ("@" not in coach_email_for_share):
-                        st.error("Email coach invalide.")
-                    else:
-                        now = now_iso()
-                        part_n = int(current_week)
-
-                        body = (
-                            f"Énergie: {mood}\n\n"
-                            f"Succès:\n{ps_success.strip()}\n\n"
-                            f"Difficulté:\n{ps_difficulty.strip()}\n\n"
-                            f"Apprentissage:\n{ps_learning.strip()}\n"
-                        )
-
-                        try:
-                            entry = build_entry(
-                                author_user_id=author_user_id,
-                                author_email=author_email,
-                                body=body,
-                                tags=ps_tags,
-                                share_with_coach=share_with_coach,
-                                coach_email=coach_email_for_share if share_with_coach else None,
-                                prompt="post-it",
-                            )
-                            journal_create(entry)
-
-                            if inject_week:
-                                wp = camp.get("weekly_plan") or []
-                                if not isinstance(wp, list):
-                                    wp = []
-                                target = next((w for w in wp if isinstance(w, dict) and int(w.get("week") or 0) == part_n), None)
-                                if target is not None:
-                                    old = str(target.get("learner_comment") or "").strip()
-                                    stamp = datetime.now().strftime("%d/%m %H:%M")
-                                    block = f"🟨 Post-it ({stamp})\n{body.strip()}\n"
-                                    target["learner_comment"] = (block + "\n\n" + old).strip()
-                                    target["updated_at"] = now
-                                    camp["updated_at"] = now
-                                    campaigns = _upsert_campaign(campaigns, camp)
-                                    save_campaigns(campaigns)
-
-                            if share_with_coach and "@" in coach_email_for_share:
-                                cid = str(camp.get("id") or "").strip()
-                                to_email = coach_email_for_share.strip().lower()
-                                send_once(
-                                    event_key=f"JOURNAL_SHARED:{cid}:{part_n}:{entry.id}",
-                                    event_type="JOURNAL_SHARED",
-                                    request_id=cid,
-                                    to_email=to_email,
-                                    subject=f"[EVERSKILLS] Post-it partagé — partie {part_n} ({cid})",
-                                    text_body=(
-                                        f"Le learner {author_email} a partagé un post-it.\n\n"
-                                        f"Campagne: {cid}\n"
-                                        f"Partie: {part_n}\n\n"
-                                        f"{body}"
-                                    ),
-                                    meta={
-                                        "camp_id": cid,
-                                        "week": part_n,
-                                        "learner_email": author_email,
-                                        "coach_email": to_email,
-                                        "journal_id": entry.id,
-                                    },
-                                )
-
-                            st.success("Post-it enregistré ✅")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Erreur d’enregistrement: {e}")
-
-        st.divider()
-
-        # ---------------------------------------------------------------------
-        # Update (actions only)
-        # ---------------------------------------------------------------------
-        st.markdown("### Suivi")
+        st.markdown("### Suivi hebdo")
 
         wp = camp.get("weekly_plan") or []
         if not isinstance(wp, list) or not wp:
@@ -812,11 +475,22 @@ with t2:
                         for ai, a in enumerate(actions):
                             if not isinstance(a, dict):
                                 continue
-                            txt = str(a.get("text") or "").strip()
+
+                            txt_raw = str(a.get("text") or "")
+                            txt = txt_raw.strip()
+                            aid = str(a.get("id") or "").strip()
+
+                            # CR14-2.1: rendre visible même une action vide ajoutée par le coach
+                            if aid:
+                                st.caption(f"action_id: `{aid}`")
+
+                            if txt == DRAFT_ACTION_PLACEHOLDER:
+                                st.info(DRAFT_ACTION_PLACEHOLDER)
+                                continue
+
                             if not txt:
                                 continue
 
-                            aid = str(a.get("id") or "").strip()
                             if aid:
                                 st.caption(f"action_id: `{aid}`")
 
@@ -885,10 +559,3 @@ with t2:
 
                         st.success("OK ✅")
                         st.rerun()
-
-        # ---------------------------------------------------------------------
-        # Mask journal history (CR14-2)
-        # ---------------------------------------------------------------------
-        # (intentionally hidden)
-        # st.divider()
-        # _journal_history_block(learner_email)
