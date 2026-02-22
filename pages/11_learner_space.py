@@ -1,5 +1,4 @@
-﻿# pages/11_learner_space.py
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -7,7 +6,14 @@ import uuid
 
 import streamlit as st
 
+# -----------------------------------------------------------------------------
+# Page config (MUST be first Streamlit call)
+# -----------------------------------------------------------------------------
+st.set_page_config(page_title="Learner Space — EVERSKILLS", layout="wide")
+
 from everskills.services.access import require_login
+from everskills.services.guard import require_role
+from everskills.services.mail_send_once import send_once
 from everskills.services.storage import (
     load_requests,
     save_requests,
@@ -15,23 +21,15 @@ from everskills.services.storage import (
     save_campaigns,
     now_iso,
 )
-from everskills.services.guard import require_role
-
-# CR11: email events (idempotent)
-from everskills.services.mail_send_once import send_once
 
 # -----------------------------------------------------------------------------
-# Page config (MUST be first Streamlit call)
+# ROLE GUARD (anti accès direct URL)
 # -----------------------------------------------------------------------------
-st.set_page_config(page_title="Learner Space — EVERSKILLS", layout="wide")
-
-# --- ROLE GUARD (anti accès direct URL)
 require_role({"learner", "super_admin"})
 
-
-# ----------------------------
+# -----------------------------------------------------------------------------
 # Auth
-# ----------------------------
+# -----------------------------------------------------------------------------
 user = st.session_state.get("user")
 ok, msg = require_login(user)
 if not ok:
@@ -41,19 +39,11 @@ if not ok:
 
 if user.get("role") not in ("learner", "super_admin"):
     st.warning("Cette page est réservée aux apprenants.")
-    st.info("Reviens à ton espace.")
     st.stop()
 
-
-# ----------------------------
+# -----------------------------------------------------------------------------
 # Helpers
-# ----------------------------
-def _as_list(x: Any) -> List[Any]:
-    if x is None:
-        return []
-    return x if isinstance(x, list) else [x]
-
-
+# -----------------------------------------------------------------------------
 def _norm_email(s: str) -> str:
     return (s or "").strip().lower()
 
@@ -98,31 +88,6 @@ def _current_week_for_campaign(camp: Dict[str, Any]) -> int:
     return max(1, min(int(wk), int(weeks)))
 
 
-# --- Actions status (CR14-1)
-ACTION_STATUSES = [
-    ("very_hard", "😣 Très difficile"),
-    ("hard", "😕 Difficile"),
-    ("within_reach", "🙂 À ma portée"),
-    ("easy", "😊 Facile"),
-    ("very_easy", "😄 Très facile"),
-]
-ACTION_LABEL = {k: v for k, v in ACTION_STATUSES}
-_ACTION_KEYS = {k for k, _ in ACTION_STATUSES}
-_OLD_TO_NEW_STATUS = {"not_started": "very_hard", "partial": "within_reach", "done": "very_easy"}
-DRAFT_ACTION_PLACEHOLDER = "⏳ Action en cours de rédaction par le coach."
-
-
-def _normalize_action_status(raw: Any) -> str:
-    s = str(raw or "").strip()
-    if not s:
-        return "within_reach"
-    if s in _OLD_TO_NEW_STATUS:
-        return _OLD_TO_NEW_STATUS[s]
-    if s in _ACTION_KEYS:
-        return s
-    return "within_reach"
-
-
 def _upsert_campaign(campaigns: List[Dict[str, Any]], camp: Dict[str, Any]) -> List[Dict[str, Any]]:
     cid = str(camp.get("id") or "").strip()
     out: List[Dict[str, Any]] = []
@@ -138,11 +103,39 @@ def _upsert_campaign(campaigns: List[Dict[str, Any]], camp: Dict[str, Any]) -> L
     return out
 
 
+def _status_to_int(raw: Any) -> int:
+    """
+    Normalise l’état d’une action sur une échelle 1..5.
+    Supporte:
+    - int 1..5
+    - str "1".."5"
+    - anciens statuts ("very_easy", "easy", etc.) => mapping
+    """
+    if raw is None:
+        return 3
+    try:
+        if isinstance(raw, int):
+            return min(max(raw, 1), 5)
+        s = str(raw).strip()
+        if s.isdigit():
+            return min(max(int(s), 1), 5)
+        # fallback mapping
+        mapping = {
+            "very_hard": 1,
+            "hard": 2,
+            "within_reach": 3,
+            "easy": 4,
+            "very_easy": 5,
+            "not_started": 1,
+            "partial": 3,
+            "done": 5,
+        }
+        return mapping.get(s, 3)
+    except Exception:
+        return 3
+
+
 def _ensure_weekly_plan(camp: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    CR14: on conserve les actions vides si elles ont un id (slot ajouté par coach).
-    => permet de rendre visible côté learner dès que le coach clique "Ajouter action".
-    """
     try:
         weeks = int(camp.get("weeks") or 3)
     except Exception:
@@ -172,22 +165,16 @@ def _ensure_weekly_plan(camp: Dict[str, Any]) -> Dict[str, Any]:
             if isinstance(a, dict):
                 aid = str(a.get("id") or "").strip()
                 txt = str(a.get("text") or "")
-                stt = _normalize_action_status(a.get("status"))
-
-                # garder action vide si id
-                item = {"status": stt, "text": txt}
+                stt = _status_to_int(a.get("status"))
+                item = {"text": txt, "status": stt}
                 if aid:
                     item["id"] = aid
                 norm_actions.append(item)
-
-            elif isinstance(a, str) and a.strip():
-                norm_actions.append({"text": a.strip(), "status": "within_reach"})
+            elif isinstance(a, str):
+                norm_actions.append({"text": a, "status": 3})
 
         mood_score = existing.get("mood_score")
-        try:
-            mood_score_int = int(mood_score) if mood_score is not None and str(mood_score).strip() != "" else None
-        except Exception:
-            mood_score_int = None
+        mood_int = _status_to_int(mood_score) if str(mood_score or "").strip() else 3
 
         norm.append(
             {
@@ -197,8 +184,7 @@ def _ensure_weekly_plan(camp: Dict[str, Any]) -> Dict[str, Any]:
                 "learner_comment": str(existing.get("learner_comment") or "").strip(),
                 "coach_comment": str(existing.get("coach_comment") or "").strip(),
                 "updated_at": str(existing.get("updated_at") or "").strip(),
-                "mood_score": mood_score_int,
-                "closed": bool(existing.get("closed") or False),
+                "mood_score": mood_int,
                 "closed_at": str(existing.get("closed_at") or "").strip(),
             }
         )
@@ -222,8 +208,8 @@ def _compute_week_completion(week: Dict[str, Any]) -> float:
         if not txt:
             continue
         total += 1
-        stt = _normalize_action_status(a.get("status"))
-        if stt in ("easy", "very_easy"):
+        stt = _status_to_int(a.get("status"))
+        if stt >= 4:
             done += 1
     return (done / total * 100.0) if total else 0.0
 
@@ -241,31 +227,25 @@ def _compute_global_completion(camp: Dict[str, Any]) -> float:
     return (total_pct / count) if count else 0.0
 
 
-# ----------------------------
+# -----------------------------------------------------------------------------
 # UI
-# ----------------------------
+# -----------------------------------------------------------------------------
 learner_email = _norm_email(user["email"])
 
 st.title("🎯 Learner Space")
-st.caption("Demande → plan → exécution → update → feedback coach")
-
-st.info("💬 Post-it & note vocale : **Menu → Canal Chat** (page dédiée).")
+st.caption("Demande → plan → exécution → suivi hebdo")
 
 t1, t2 = st.tabs(["📝 Ma demande", "📌 Mon plan"])
 
-# ----------------------------
+# -----------------------------------------------------------------------------
 # TAB 1: Request
-# ----------------------------
+# -----------------------------------------------------------------------------
 with t1:
     st.subheader("📝 Soumettre une demande")
 
     with st.form("learner_request_form", clear_on_submit=False):
         objective = st.text_input("Objectif", placeholder="Ex: gagner en assertivité en réunion", max_chars=200)
-        context = st.text_area(
-            "Contexte",
-            height=120,
-            placeholder="Décris la situation, ce que tu veux changer, la contrainte, etc.",
-        )
+        context = st.text_area("Contexte", height=120, placeholder="Décris la situation, ce que tu veux changer, la contrainte, etc.")
         weeks = st.number_input("Durée (parties)", min_value=1, max_value=8, value=3, step=1)
         submitted = st.form_submit_button("📨 Envoyer la demande")
 
@@ -315,11 +295,7 @@ with t1:
 
     st.divider()
     st.caption("Tes dernières demandes")
-    my_reqs = [
-        r
-        for r in (load_requests() or [])
-        if isinstance(r, dict) and _norm_email(r.get("email", "")) == learner_email
-    ]
+    my_reqs = [r for r in (load_requests() or []) if isinstance(r, dict) and _norm_email(r.get("email", "")) == learner_email]
     my_reqs = sorted(my_reqs, key=lambda r: str(r.get("ts") or ""), reverse=True)
 
     if not my_reqs:
@@ -328,9 +304,9 @@ with t1:
         for r in my_reqs[:6]:
             st.write(f"- `{r.get('status','')}` — {r.get('objective','')[:80]} — {r.get('id','')}")
 
-# ----------------------------
-# TAB 2: My Plan
-# ----------------------------
+# -----------------------------------------------------------------------------
+# TAB 2: Plan + suivi hebdo
+# -----------------------------------------------------------------------------
 with t2:
     st.subheader("📌 Mon plan")
 
@@ -355,9 +331,7 @@ with t2:
 
     left, right = st.columns([1.05, 1.95], gap="large")
 
-    # ----------------------------
-    # LEFT
-    # ----------------------------
+    # LEFT: résumé + programme
     with left:
         st.markdown("### Résumé")
         st.write(f"**Objectif :** {camp.get('objective','')}")
@@ -404,17 +378,17 @@ with t2:
                 save_campaigns(campaigns)
 
                 cid = str(camp.get("id") or "").strip()
-                coach_email = str(camp.get("coach_email") or "").strip().lower() or "admin@everboarding.fr"
+                coach_to = str(camp.get("coach_email") or "").strip().lower() or "admin@everboarding.fr"
                 kickoff_txt = str(camp.get("kickoff_message") or "").strip()
 
                 send_once(
                     event_key=f"PROGRAM_VALIDATED:{cid}",
                     event_type="PROGRAM_VALIDATED",
                     request_id=cid,
-                    to_email=coach_email,
+                    to_email=coach_to,
                     subject=f"[EVERSKILLS] Programme validé ({cid})",
                     text_body=f"Le learner {learner_email} a validé le programme.\n\nCampagne: {cid}",
-                    meta={"camp_id": cid, "learner_email": learner_email, "coach_email": coach_email},
+                    meta={"camp_id": cid, "learner_email": learner_email, "coach_email": coach_to},
                 )
 
                 send_once(
@@ -430,132 +404,141 @@ with t2:
                 st.success("Campagne démarrée ✅")
                 st.rerun()
 
-    # ----------------------------
-    # RIGHT
-    # ----------------------------
+    # RIGHT: suivi hebdo uniquement (no chat, no post-it, no voice note)
     with right:
-        camp_status = str(camp.get("status") or "").strip()
-
-        st.markdown("### Suivi hebdo")
+        st.markdown("### 📈 Suivi hebdo")
+        st.caption("Ici : actions + commentaire + note d’ambiance. Le canal chat est ailleurs.")
 
         wp = camp.get("weekly_plan") or []
         if not isinstance(wp, list) or not wp:
             st.info("Aucun suivi disponible.")
-        else:
-            for w in wp:
-                if not isinstance(w, dict):
-                    continue
+            st.stop()
 
-                part_n = int(w.get("week") or 0) or 0
-                obj_part = str(w.get("objective_week") or f"Partie {part_n}").strip()
+        for w in wp:
+            if not isinstance(w, dict):
+                continue
 
-                pctw = _compute_week_completion(w)
-                with st.expander(
-                    f"Partie {part_n} — {obj_part or 'Objectif non défini'} — {pctw:.0f}%",
-                    expanded=(part_n == current_week),
+            part_n = int(w.get("week") or 0) or 0
+            obj_part = str(w.get("objective_week") or f"Partie {part_n}").strip()
+
+            pctw = _compute_week_completion(w)
+            with st.expander(
+                f"Partie {part_n} — {obj_part or 'Objectif non défini'} — {pctw:.0f}%",
+                expanded=(part_n == current_week),
+            ):
+                closed_at = str(w.get("closed_at") or "").strip()
+                is_closed = bool(closed_at)
+
+                if is_closed:
+                    st.success(f"✅ Partie clôturée ({closed_at})")
+
+                st.markdown("**Objectif de la partie**")
+                if obj_part:
+                    st.write(obj_part)
+                else:
+                    st.warning("Objectif non défini.")
+
+                st.divider()
+                st.markdown("**Actions (coach → toi)**")
+
+                actions = w.get("actions") or []
+                if not isinstance(actions, list) or not actions:
+                    st.caption("Pas d’actions pour l’instant.")
+                else:
+                    shown = 0
+                    for ai, a in enumerate(actions):
+                        if not isinstance(a, dict):
+                            continue
+                        txt = str(a.get("text") or "").strip()
+                        if not txt:
+                            continue  # IMPORTANT: on n’affiche pas les actions vides
+                        shown += 1
+
+                        aid = str(a.get("id") or "").strip()
+                        if aid:
+                            st.caption(f"action_id: `{aid}`")
+
+                        st.write(f"- {txt}")
+
+                        current = _status_to_int(a.get("status"))
+                        key_id = aid or f"idx_{ai}"
+                        new_status = st.radio(
+                            " ",
+                            options=[1, 2, 3, 4, 5],
+                            index=[1, 2, 3, 4, 5].index(current),
+                            format_func=lambda x: ["😫 Très difficile", "😕 Difficile", "🙂 À ma portée", "😄 Facile", "🤩 Très facile"][x - 1],
+                            key=f"learner_action__{camp.get('id')}__{part_n}__{key_id}",
+                            horizontal=True,
+                            label_visibility="collapsed",
+                            disabled=is_closed,
+                        )
+                        a["status"] = int(new_status)
+
+                    if shown == 0:
+                        st.info("Le coach a ajouté des actions mais elles ne sont pas encore renseignées.")
+
+                st.divider()
+                st.markdown("**Note d’ambiance (1 à 5)**")
+                mood_current = _status_to_int(w.get("mood_score"))
+                mood_new = st.radio(
+                    " ",
+                    options=[1, 2, 3, 4, 5],
+                    index=[1, 2, 3, 4, 5].index(mood_current),
+                    key=f"learner_mood__{camp.get('id')}__{part_n}",
+                    horizontal=True,
+                    label_visibility="collapsed",
+                    disabled=is_closed,
+                )
+                w["mood_score"] = int(mood_new)
+
+                st.divider()
+                st.markdown("**Ton compte-rendu (verbatim)**")
+                comment = st.text_area(
+                    " ",
+                    value=str(w.get("learner_comment") or ""),
+                    key=f"learner_comment_{camp.get('id')}_{part_n}",
+                    height=110,
+                    placeholder="Ex: ce que j’ai fait, ce qui a bloqué, ce que je vais tenter la semaine prochaine…",
+                    label_visibility="collapsed",
+                    disabled=is_closed,
+                )
+
+                coach_comment = str(w.get("coach_comment") or "").strip()
+                if coach_comment:
+                    st.markdown("**Retour coach**")
+                    st.info(coach_comment)
+
+                if st.button(
+                    "💾 Enregistrer mon suivi",
+                    key=f"save_learner_part_{camp.get('id')}_{part_n}",
+                    use_container_width=True,
+                    disabled=is_closed,
                 ):
-                    if bool(w.get("closed") or False):
-                        closed_at = str(w.get("closed_at") or "").strip()
-                        stamp = "✅ Partie clôturée" + (f" — {closed_at[:10]}" if closed_at else "")
-                        st.success(stamp)
+                    now = now_iso()
+                    w["actions"] = actions
+                    w["learner_comment"] = comment
+                    w["updated_at"] = now
+                    camp["updated_at"] = now
 
-                    st.markdown("**Objectif de la partie**")
-                    if obj_part:
-                        st.write(obj_part)
-                    else:
-                        st.warning("Objectif non défini.")
+                    campaigns = _upsert_campaign(campaigns, camp)
+                    save_campaigns(campaigns)
 
-                    st.divider()
-                    st.markdown("**Actions (coach → toi)**")
-
-                    actions = w.get("actions") or []
-                    if not isinstance(actions, list) or not actions:
-                        st.caption("Pas d’actions pré-remplies pour l’instant.")
-                    else:
-                        for ai, a in enumerate(actions):
-                            if not isinstance(a, dict):
-                                continue
-
-                            txt_raw = str(a.get("text") or "")
-                            txt = txt_raw.strip()
-                            aid = str(a.get("id") or "").strip()
-
-                            # CR14-2.1: rendre visible même une action vide ajoutée par le coach
-                            if aid:
-                                st.caption(f"action_id: `{aid}`")
-
-                            if txt == DRAFT_ACTION_PLACEHOLDER:
-                                st.info(DRAFT_ACTION_PLACEHOLDER)
-                                continue
-
-                            if not txt:
-                                continue
-
-                            if aid:
-                                st.caption(f"action_id: `{aid}`")
-
-                            st.write(f"- {txt}")
-
-                            current = _normalize_action_status(a.get("status"))
-                            keys = [k for k, _ in ACTION_STATUSES]
-                            idxs = keys.index(current) if current in keys else 2
-
-                            key_id = aid or f"idx_{ai}"
-                            new_status = st.radio(
-                                " ",
-                                options=keys,
-                                index=idxs,
-                                format_func=lambda k: ACTION_LABEL.get(k, k),
-                                key=f"learner_action__{camp.get('id')}__{part_n}__{key_id}",
-                                horizontal=True,
-                                label_visibility="collapsed",
-                                disabled=bool(w.get("closed") or False),
-                            )
-                            a["status"] = new_status
-
-                    st.divider()
-                    st.markdown("**Ton commentaire (verbatim)**")
-                    comment = st.text_area(
-                        " ",
-                        value=str(w.get("learner_comment") or ""),
-                        key=f"learner_comment_{camp.get('id')}_{part_n}",
-                        height=90,
-                        placeholder="Ex: j’ai fait l’action 1, pas eu le temps pour l’action 2.",
-                        label_visibility="collapsed",
-                        disabled=bool(w.get("closed") or False),
+                    cid = str(camp.get("id") or "").strip()
+                    coach_to = str(camp.get("coach_email") or "").strip().lower() or "admin@everboarding.fr"
+                    send_once(
+                        event_key=f"LEARNER_UPDATE:{cid}:{part_n}:{now}",
+                        event_type="LEARNER_UPDATE",
+                        request_id=cid,
+                        to_email=coach_to,
+                        subject=f"[EVERSKILLS] Suivi partie {part_n} ({cid})",
+                        text_body=(
+                            f"Suivi learner (partie {part_n}).\n\n"
+                            f"Learner: {learner_email}\n"
+                            f"Note d'ambiance: {w.get('mood_score')}\n\n"
+                            f"{comment}"
+                        ),
+                        meta={"camp_id": cid, "week": part_n, "learner_email": learner_email},
                     )
 
-                    coach_comment = str(w.get("coach_comment") or "").strip()
-                    if coach_comment:
-                        st.markdown("**Retour coach**")
-                        st.info(coach_comment)
-
-                    if st.button(
-                        "💾 Enregistrer mon update",
-                        key=f"save_learner_part_{camp.get('id')}_{part_n}",
-                        use_container_width=True,
-                        disabled=bool(w.get("closed") or False),
-                    ):
-                        now = now_iso()
-                        w["actions"] = actions
-                        w["learner_comment"] = comment
-                        w["updated_at"] = now
-                        camp["updated_at"] = now
-
-                        campaigns = _upsert_campaign(campaigns, camp)
-                        save_campaigns(campaigns)
-
-                        cid = str(camp.get("id") or "").strip()
-                        coach_email = str(camp.get("coach_email") or "").strip().lower() or "admin@everboarding.fr"
-                        send_once(
-                            event_key=f"LEARNER_UPDATE:{cid}:{part_n}:{now}",
-                            event_type="LEARNER_UPDATE",
-                            request_id=cid,
-                            to_email=coach_email,
-                            subject=f"[EVERSKILLS] Update partie {part_n} ({cid})",
-                            text_body=f"Update learner (partie {part_n}).\n\nLearner: {learner_email}\n\n{comment}",
-                            meta={"camp_id": cid, "week": part_n, "learner_email": learner_email},
-                        )
-
-                        st.success("OK ✅")
-                        st.rerun()
+                    st.success("OK ✅")
+                    st.rerun()
