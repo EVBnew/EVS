@@ -1,5 +1,4 @@
-﻿# pages/11_learner_space.py
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -12,19 +11,16 @@ import streamlit as st
 # -----------------------------------------------------------------------------
 st.set_page_config(page_title="Learner Space — EVERSKILLS", layout="wide")
 
-from everskills.services.access import require_login  # noqa: E402
-from everskills.services.guard import require_role  # noqa: E402
-from everskills.services.mail_send_once import send_once  # noqa: E402
-from everskills.services.storage import (  # noqa: E402
+from everskills.services.access import require_login
+from everskills.services.guard import require_role
+from everskills.services.mail_send_once import send_once
+from everskills.services.storage import (
     load_requests,
     save_requests,
     load_campaigns,
     save_campaigns,
     now_iso,
 )
-
-# Global sidebar (single source of truth)
-from everskills.ui.sidebar import render_sidebar  # noqa: E402
 
 # -----------------------------------------------------------------------------
 # ROLE GUARD (anti accès direct URL)
@@ -41,12 +37,9 @@ if not ok:
     st.info("Retourne sur Welcome (app) pour te connecter.")
     st.stop()
 
-if (user or {}).get("role") not in ("learner", "super_admin"):
+if user.get("role") not in ("learner", "super_admin"):
     st.warning("Cette page est réservée aux apprenants.")
     st.stop()
-
-# Render global sidebar (no page-level sidebar anywhere else)
-# render_sidebar()  # moved: must run after SIDEBAR_KPI is computed
 
 # -----------------------------------------------------------------------------
 # Helpers
@@ -126,6 +119,7 @@ def _status_to_int(raw: Any) -> int:
         s = str(raw).strip()
         if s.isdigit():
             return min(max(int(s), 1), 5)
+        # fallback mapping
         mapping = {
             "very_hard": 1,
             "hard": 2,
@@ -136,7 +130,6 @@ def _status_to_int(raw: Any) -> int:
             "partial": 3,
             "done": 5,
         }
-
         return mapping.get(s, 3)
     except Exception:
         return 3
@@ -234,20 +227,10 @@ def _compute_global_completion(camp: Dict[str, Any]) -> float:
     return (total_pct / count) if count else 0.0
 
 
-def _week_by_n(c: Dict[str, Any], n: int) -> Optional[Dict[str, Any]]:
-    wpl = c.get("weekly_plan") or []
-    if not isinstance(wpl, list):
-        return None
-    for it in wpl:
-        if isinstance(it, dict) and int(it.get("week") or 0) == int(n):
-            return it
-    return None
-
-
 # -----------------------------------------------------------------------------
 # UI
 # -----------------------------------------------------------------------------
-learner_email = _norm_email(str((user or {}).get("email") or ""))
+learner_email = _norm_email(user["email"])
 
 st.title("🎯 Learner Space")
 st.caption("Demande → plan → exécution → suivi hebdo")
@@ -262,11 +245,7 @@ with t1:
 
     with st.form("learner_request_form", clear_on_submit=False):
         objective = st.text_input("Objectif", placeholder="Ex: gagner en assertivité en réunion", max_chars=200)
-        context = st.text_area(
-            "Contexte",
-            height=120,
-            placeholder="Décris la situation, ce que tu veux changer, la contrainte, etc.",
-        )
+        context = st.text_area("Contexte", height=120, placeholder="Décris la situation, ce que tu veux changer, la contrainte, etc.")
         weeks = st.number_input("Durée (parties)", min_value=1, max_value=8, value=3, step=1)
         submitted = st.form_submit_button("📨 Envoyer la demande")
 
@@ -316,18 +295,14 @@ with t1:
 
     st.divider()
     st.caption("Tes dernières demandes")
-    my_reqs = [
-        r
-        for r in (load_requests() or [])
-        if isinstance(r, dict) and _norm_email(r.get("email", "")) == learner_email
-    ]
+    my_reqs = [r for r in (load_requests() or []) if isinstance(r, dict) and _norm_email(r.get("email", "")) == learner_email]
     my_reqs = sorted(my_reqs, key=lambda r: str(r.get("ts") or ""), reverse=True)
 
     if not my_reqs:
         st.info("Aucune demande pour l’instant.")
     else:
         for r in my_reqs[:6]:
-            st.write(f"- `{r.get('status','')}` — {str(r.get('objective',''))[:80]} — {r.get('id','')}")
+            st.write(f"- `{r.get('status','')}` — {r.get('objective','')[:80]} — {r.get('id','')}")
 
 # -----------------------------------------------------------------------------
 # TAB 2: Plan + suivi hebdo
@@ -347,63 +322,12 @@ with t2:
         st.info("Pas encore de campagne. Une fois que le coach publie, elle apparaîtra ici.")
         st.stop()
 
-    labels = [f"{c.get('id','')} — {c.get('status','')} — {str(c.get('objective',''))[:50]}" for c in my_campaigns]
+    labels = [f"{c.get('id','')} — {c.get('status','')} — {c.get('objective','')[:50]}" for c in my_campaigns]
     idx = st.selectbox("Choisir une campagne", options=list(range(len(my_campaigns))), format_func=lambda i: labels[i])
 
     camp = _ensure_weekly_plan(my_campaigns[idx])
     current_week = _current_week_for_campaign(camp)
     camp_id = str(camp.get("id") or "").strip()
-
-    # -------------------------------------------------------------------------
-    # Push KPI to global sidebar (sidebar.py)
-    # -------------------------------------------------------------------------
-    pct_global = _compute_global_completion(camp)
-
-    done_total = 0
-    total_total = 0
-    wp_all = camp.get("weekly_plan") or []
-    if not isinstance(wp_all, list):
-        wp_all = []
-
-    for ww in wp_all:
-        if not isinstance(ww, dict):
-            continue
-        acts = ww.get("actions") or []
-        if not isinstance(acts, list):
-            continue
-        for aa in acts:
-            if not isinstance(aa, dict):
-                continue
-            txt = str(aa.get("text") or "").strip()
-            if not txt:
-                continue
-            total_total += 1
-            if _status_to_int(aa.get("status")) >= 4:
-                done_total += 1
-
-    cur_w = _week_by_n(camp, current_week) or {}
-    prev_w = _week_by_n(camp, max(1, current_week - 1)) or {}
-    pct_cur = _compute_week_completion(cur_w) if cur_w else 0.0
-    pct_prev = _compute_week_completion(prev_w) if (current_week > 1 and prev_w) else 0.0
-    velocity = pct_cur - pct_prev
-
-    mood_emoji = {1: "😫", 2: "😕", 3: "🙂", 4: "😄", 5: "🤩"}
-    mood_val = _status_to_int(cur_w.get("mood_score")) if cur_w else 3
-    mood_icon = mood_emoji.get(int(mood_val), "🙂")
-
-    st.session_state["SIDEBAR_KPI"] = {
-
-        "progress": f"{pct_global:.0f}%",
-
-        "velocity": f"{velocity:+.0f}%",
-        "actions": f"{done_total}/{total_total}" if total_total else "0/0",
-        "mood": mood_icon,
-        "camp_id": camp_id,
-        "current_week": int(current_week),
-    }
-
-    render_sidebar()
-
 
     left, right = st.columns([1.05, 1.95], gap="large")
 
@@ -480,7 +404,7 @@ with t2:
                 st.success("Campagne démarrée ✅")
                 st.rerun()
 
-    # RIGHT: suivi hebdo uniquement
+    # RIGHT: suivi hebdo uniquement (no chat, no post-it, no voice note)
     with right:
         st.markdown("### 📈 Suivi hebdo")
         st.caption("Ici : actions + commentaire + note d’ambiance. Le canal chat est ailleurs.")
@@ -504,9 +428,6 @@ with t2:
             ):
                 closed_at = str(w.get("closed_at") or "").strip()
                 is_closed = bool(closed_at)
-
-                # Barre de progression par partie
-                st.progress(min(max(pctw / 100.0, 0.0), 1.0))
 
                 if is_closed:
                     st.success(f"✅ Partie clôturée ({closed_at})")
@@ -545,13 +466,7 @@ with t2:
                             " ",
                             options=[1, 2, 3, 4, 5],
                             index=[1, 2, 3, 4, 5].index(current),
-                            format_func=lambda x: [
-                                "😫 Très difficile",
-                                "😕 Difficile",
-                                "🙂 À ma portée",
-                                "😄 Facile",
-                                "🤩 Très facile",
-                            ][x - 1],
+                            format_func=lambda x: ["😫 Très difficile", "😕 Difficile", "🙂 À ma portée", "😄 Facile", "🤩 Très facile"][x - 1],
                             key=f"learner_action__{camp.get('id')}__{part_n}__{key_id}",
                             horizontal=True,
                             label_visibility="collapsed",
@@ -564,7 +479,6 @@ with t2:
 
                 st.divider()
                 st.markdown("**Note d’ambiance (1 à 5)**")
-
                 mood_current = _status_to_int(w.get("mood_score"))
                 mood_new = st.radio(
                     " ",
@@ -579,7 +493,6 @@ with t2:
 
                 st.divider()
                 st.markdown("**Ton compte-rendu (verbatim)**")
-
                 comment = st.text_area(
                     " ",
                     value=str(w.get("learner_comment") or ""),
@@ -629,5 +542,3 @@ with t2:
 
                     st.success("OK ✅")
                     st.rerun()
-
-

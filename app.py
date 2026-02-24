@@ -136,7 +136,10 @@ st.markdown(
     """
 <style>
 /* Hide Streamlit auto page nav (we use our own sidebar) */
-section[data-testid="stSidebarNav"] { display: none; }
+
+/* Hide Streamlit auto page nav (all variants) */
+
+/* Hide the “EVERSKILLS / Learner Space” bottom block Streamlit sometimes injects */
 
 /* Layout */
 .block-container { max-width: 1200px; padding-top: 2.2rem; }
@@ -258,27 +261,9 @@ def _call_apps_script(action: str, payload: dict) -> dict:
 # -----------------------------------------------------------------------------
 # Sidebar (role-based) — MINIMAL + NO GOLDEN/LOGS
 # -----------------------------------------------------------------------------
-with st.sidebar:
-    st.markdown("## EVERSKILLS")
-    st.caption(f"EVERSKILLS · version {BUILD_ID} – {BUILD_DATE}")
-    st.divider()
+from everskills.ui.sidebar import render_sidebar
 
-    st.page_link("app.py", label="Welcome", icon="🏠")
-
-    r = _role()
-
-    st.divider()
-    st.caption("Espaces")
-
-    if r in ("learner", "super_admin"):
-        safe_page_link("pages/11_learner_space.py", label="Learner Space", icon="🎯")
-        safe_page_link("pages/20_canal_chat.py", label="Canal Chat", icon="💬")
-
-    if r in ("coach", "admin", "super_admin"):
-        safe_page_link("pages/10_coach_space.py", label="Coach Space", icon="🧠")
-
-    if r in ("admin", "super_admin"):
-        safe_page_link("pages/90_admin_approvals.py", label="Admin Space", icon="🛠️")
+render_sidebar(build_id=BUILD_ID, build_date=BUILD_DATE)
 
 
 # -----------------------------------------------------------------------------

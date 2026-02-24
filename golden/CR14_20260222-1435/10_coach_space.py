@@ -801,16 +801,12 @@ with col_mid:
                 header = f"Semaine {week_n} — {obj_week or 'Objectif non défini'} — {pct:.0f}% ({d}/{t})"
 
                 with st.expander(header, expanded=(week_n == 1)):
-                    # Progression par partie
-                    st.caption(f"Progression partie : {pct:.0f}%")
-                    st.progress(min(max(pct / 100.0, 0.0), 1.0))
                     st.markdown("**🛠️ Programme de la semaine (coach peut éditer)**")
                     obj_key = f"week_obj__{selected_camp.get('id')}__{week_n}"
                     st.text_input(
                         "Objectif de la semaine",
-                    value=str(w.get("objective_week") or ""),
-                    key=obj_key,
-
+                        value=str(w.get("objective_week") or ""),
+                        key=obj_key,
                     )
 
                     actions = w.get("actions") or []
