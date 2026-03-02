@@ -343,7 +343,10 @@ with t1:
         ap_expectations = ""
         ap_actions: List[Dict[str, Any]] = []
 
-        if ap_enabled:
+        # IMPORTANT (Streamlit): inside a form, widgets don't rerun on change.
+        # So we always display the fields, and ap_enabled decides whether we save them.
+        with st.expander("🧩 Définir mon plan d’action (3 actions max)", expanded=False):
+
             ap_intention = st.text_area(
                 "🎯 Intention stratégique",
                 height=90,
@@ -403,6 +406,18 @@ with t1:
                 max_chars=800,
             )
 
+        # ------------------------------------------------------------------
+        # CR16 — build action_plan_draft to persist in request
+        # ------------------------------------------------------------------
+        action_plan_draft = {
+            "enabled": bool(ap_enabled),
+            "intention": (ap_intention or "").strip(),
+            "actions": ap_actions[:3],
+            "engagement_score": int(ap_engagement or 3),
+            "frictions": (ap_frictions or "").strip(),
+            "coach_expectations": {"mode": "text", "text": (ap_expectations or "").strip(), "tags": []},
+        }
+
         submitted = st.form_submit_button("📨 Envoyer la demande")
 
     if submitted:
@@ -421,21 +436,17 @@ with t1:
                 "weeks": int(weeks),
                 "supports": [],
                 "status": "submitted",
+                "action_plan_draft": action_plan_draft,
             }
 
             # CR16: optional action plan draft (stored inside Request)
             if ap_enabled:
                 now = now_iso()
-                req["action_plan_draft"] = {
-                    "enabled": True,
-                    "intention": (ap_intention or "").strip(),
-                    "actions": (ap_actions or [])[:3],
-                    "engagement_score": int(ap_engagement),
-                    "frictions": (ap_frictions or "").strip(),
-                    "coach_expectations": {"mode": "text", "text": (ap_expectations or "").strip(), "tags": []},
-                    "created_at": now,
-                    "updated_at": now,
-                }
+                req["action_plan_draft"]["enabled"] = True
+                req["action_plan_draft"]["created_at"] = now
+                req["action_plan_draft"]["updated_at"] = now
+            else:
+                req["action_plan_draft"]["enabled"] = False
 
             requests.append(req)
             save_requests(requests)
