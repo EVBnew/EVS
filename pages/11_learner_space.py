@@ -1,7 +1,7 @@
 ﻿# pages/11_learner_space.py
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
 import uuid
 
@@ -44,9 +44,6 @@ if not ok:
 if (user or {}).get("role") not in ("learner", "super_admin"):
     st.warning("Cette page est réservée aux apprenants.")
     st.stop()
-
-# Render global sidebar (no page-level sidebar anywhere else)
-# render_sidebar()  # moved: must run after SIDEBAR_KPI is computed
 
 # -----------------------------------------------------------------------------
 # Helpers
@@ -136,7 +133,6 @@ def _status_to_int(raw: Any) -> int:
             "partial": 3,
             "done": 5,
         }
-
         return mapping.get(s, 3)
     except Exception:
         return 3
@@ -244,6 +240,74 @@ def _week_by_n(c: Dict[str, Any], n: int) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _date_to_iso(d: Any) -> str:
+    if isinstance(d, date):
+        return d.isoformat()
+    s = str(d or "").strip()
+    return s
+
+
+def _render_action_plan_official(official: Dict[str, Any]) -> None:
+    st.markdown("### 🧩 Mon plan d’action officiel")
+
+    intention = str(official.get("intention") or "").strip()
+    if intention:
+        st.markdown("**🎯 Intention stratégique**")
+        st.write(intention)
+
+    engagement = official.get("engagement_score")
+    if str(engagement or "").strip():
+        try:
+            e = int(engagement)
+        except Exception:
+            e = 0
+        if 1 <= e <= 5:
+            st.markdown("**📊 Niveau d’engagement**")
+            st.write(f"{e}/5")
+
+    actions = official.get("actions") or []
+    if isinstance(actions, list) and actions:
+        st.markdown("**📌 Actions prioritaires**")
+        shown = 0
+        for a in actions[:3]:
+            if not isinstance(a, dict):
+                continue
+            desc = str(a.get("description") or "").strip()
+            if not desc:
+                continue
+            shown += 1
+            due = str(a.get("due_date") or "").strip()
+            impact = str(a.get("impact") or "").strip()
+
+            line = f"- **{desc}**"
+            if due:
+                line += f" _(échéance: {due})_"
+            st.write(line)
+            if impact:
+                st.caption(f"Impact attendu : {impact}")
+
+        if shown == 0:
+            st.info("Plan officiel présent, mais aucune action n’est renseignée.")
+
+    fr = str(official.get("frictions") or "").strip()
+    if fr:
+        st.markdown("**⛔ Freins anticipés**")
+        st.write(fr)
+
+    exp = official.get("coach_expectations") or {}
+    if isinstance(exp, dict):
+        txt = str(exp.get("text") or "").strip()
+    else:
+        txt = str(exp or "").strip()
+    if txt:
+        st.markdown("**🤝 Attentes vis-à-vis du coach**")
+        st.write(txt)
+
+    validated_at = str(official.get("validated_at") or "").strip()
+    if validated_at:
+        st.caption(f"Validé par le coach : {validated_at}")
+
+
 # -----------------------------------------------------------------------------
 # UI
 # -----------------------------------------------------------------------------
@@ -268,6 +332,77 @@ with t1:
             placeholder="Décris la situation, ce que tu veux changer, la contrainte, etc.",
         )
         weeks = st.number_input("Durée (parties)", min_value=1, max_value=8, value=3, step=1)
+
+        st.divider()
+        st.markdown("### 🧩 Plan d’action post-formation (optionnel)")
+        ap_enabled = st.checkbox("☐ Je souhaite définir mon plan d’action maintenant", value=False)
+
+        ap_intention = ""
+        ap_engagement = 3
+        ap_frictions = ""
+        ap_expectations = ""
+        ap_actions: List[Dict[str, Any]] = []
+
+        if ap_enabled:
+            ap_intention = st.text_area(
+                "🎯 Intention stratégique",
+                height=90,
+                placeholder="Ex: Je veux être capable de… / Je veux changer…",
+                max_chars=800,
+            )
+
+            st.markdown("**📌 3 actions max**")
+            for i in range(1, 4):
+                with st.expander(f"Action {i}", expanded=(i == 1)):
+                    desc = st.text_input(
+                        "Description",
+                        key=f"ap_desc_{i}",
+                        placeholder="Ex: préparer 1 prise de parole par semaine…",
+                        max_chars=800,
+                    )
+                    due = st.date_input(
+                        "Échéance",
+                        key=f"ap_due_{i}",
+                        value=None,
+                    )
+                    impact = st.text_input(
+                        "Impact attendu",
+                        key=f"ap_impact_{i}",
+                        placeholder="Ex: + clarté / + confiance / + efficacité…",
+                        max_chars=120,
+                    )
+
+                    if (desc or "").strip():
+                        ap_actions.append(
+                            {
+                                "id": f"ap_act_{uuid.uuid4().hex[:10]}",
+                                "description": desc.strip(),
+                                "due_date": _date_to_iso(due) if due else "",
+                                "impact": (impact or "").strip(),
+                            }
+                        )
+
+            ap_engagement = st.select_slider(
+                "📊 Niveau d’engagement",
+                options=[1, 2, 3, 4, 5],
+                value=3,
+                format_func=lambda x: {1: "1 (faible)", 2: "2", 3: "3", 4: "4", 5: "5 (fort)"}[x],
+            )
+
+            ap_frictions = st.text_area(
+                "⛔ Freins anticipés",
+                height=80,
+                placeholder="Ex: manque de temps, peur du regard des autres, contexte d’équipe…",
+                max_chars=800,
+            )
+
+            ap_expectations = st.text_area(
+                "🤝 Attentes vis-à-vis du coach",
+                height=80,
+                placeholder="Ex: feedback direct, challenge, cadence, relecture…",
+                max_chars=800,
+            )
+
         submitted = st.form_submit_button("📨 Envoyer la demande")
 
     if submitted:
@@ -277,7 +412,7 @@ with t1:
             requests = [r for r in (load_requests() or []) if isinstance(r, dict)]
 
             rid = f"req_{uuid.uuid4().hex[:10]}"
-            req = {
+            req: Dict[str, Any] = {
                 "id": rid,
                 "ts": now_iso(),
                 "email": learner_email,
@@ -287,6 +422,21 @@ with t1:
                 "supports": [],
                 "status": "submitted",
             }
+
+            # CR16: optional action plan draft (stored inside Request)
+            if ap_enabled:
+                now = now_iso()
+                req["action_plan_draft"] = {
+                    "enabled": True,
+                    "intention": (ap_intention or "").strip(),
+                    "actions": (ap_actions or [])[:3],
+                    "engagement_score": int(ap_engagement),
+                    "frictions": (ap_frictions or "").strip(),
+                    "coach_expectations": {"mode": "text", "text": (ap_expectations or "").strip(), "tags": []},
+                    "created_at": now,
+                    "updated_at": now,
+                }
+
             requests.append(req)
             save_requests(requests)
 
@@ -296,6 +446,9 @@ with t1:
             if not admin_to:
                 st.error("ADMIN_EMAIL / ACCESS_ADMIN_EMAIL manquant.")
             else:
+                extra = ""
+                if ap_enabled:
+                    extra = "\n\nPlan d’action: OUI (draft inclus dans la demande)."
                 send_once(
                     event_key=event_key,
                     event_type="REQUEST_SUBMITTED",
@@ -306,7 +459,8 @@ with t1:
                         "Une nouvelle demande learner a été soumise.\n\n"
                         f"Learner: {learner_email}\n"
                         f"Objectif: {(objective or '').strip()}\n"
-                        f"Durée: {int(weeks)} partie(s)\n\n"
+                        f"Durée: {int(weeks)} partie(s)\n"
+                        f"{extra}\n\n"
                         "Ouvre Admin RH Space pour l’assigner à un coach."
                     ),
                     meta={"learner_email": learner_email, "admin_email": admin_to},
@@ -327,7 +481,11 @@ with t1:
         st.info("Aucune demande pour l’instant.")
     else:
         for r in my_reqs[:6]:
-            st.write(f"- `{r.get('status','')}` — {str(r.get('objective',''))[:80]} — {r.get('id','')}")
+            flag = ""
+            ap = r.get("action_plan_draft")
+            if isinstance(ap, dict) and bool(ap.get("enabled")):
+                flag = " — 🧩 plan inclus"
+            st.write(f"- `{r.get('status','')}` — {str(r.get('objective',''))[:80]} — {r.get('id','')}{flag}")
 
 # -----------------------------------------------------------------------------
 # TAB 2: Plan + suivi hebdo
@@ -392,9 +550,7 @@ with t2:
     mood_icon = mood_emoji.get(int(mood_val), "🙂")
 
     st.session_state["SIDEBAR_KPI"] = {
-
         "progress": f"{pct_global:.0f}%",
-
         "velocity": f"{velocity:+.0f}%",
         "actions": f"{done_total}/{total_total}" if total_total else "0/0",
         "mood": mood_icon,
@@ -404,10 +560,9 @@ with t2:
 
     render_sidebar()
 
-
     left, right = st.columns([1.05, 1.95], gap="large")
 
-    # LEFT: résumé + programme
+    # LEFT: résumé + plan/programme
     with left:
         st.markdown("### Résumé")
         st.write(f"**Objectif :** {camp.get('objective','')}")
@@ -419,29 +574,28 @@ with t2:
         st.caption(f"Progression globale : {pct:.0f}%")
         st.progress(min(max(pct / 100.0, 0.0), 1.0))
 
-        kickoff = str(camp.get("kickoff_message") or "").strip()
-        if kickoff:
-            st.divider()
-            st.markdown("### 💬 Message du coach")
-            st.success(kickoff)
 
-        closing = str(camp.get("closure_message") or "").strip()
-        if closing:
-            st.divider()
-            st.markdown("### 🏁 Message de clôture")
-            st.success(closing)
-        elif str(camp.get("status") or "").strip() == "closed":
-            st.divider()
-            st.markdown("### 🏁 Message de clôture")
-            st.info("Campagne clôturée. (Message de clôture non renseigné.)")
 
+        # CR16: if weekly_plan_origin == action_plan, replace "Programme (coach)" by official action plan
         st.divider()
-        st.markdown("### Programme (coach)")
-        program_text = str(camp.get("program_text") or "").strip()
-        if program_text:
-            st.markdown(program_text)
+
+        weekly_origin = str(camp.get("weekly_plan_origin") or "").strip()
+        ap = camp.get("action_plan") or {}
+        if not isinstance(ap, dict):
+            ap = {}
+        official = ap.get("official") or {}
+        if not isinstance(official, dict):
+            official = {}
+
+        if weekly_origin == "action_plan" and official:
+            _render_action_plan_official(official)
         else:
-            st.info("Programme pas encore publié.")
+            st.markdown("### Programme (coach)")
+            program_text = str(camp.get("program_text") or "").strip()
+            if program_text:
+                st.markdown(program_text)
+            else:
+                st.info("Programme pas encore publié.")
 
         if camp.get("status") == "program_ready":
             st.warning("Programme prêt. Clique pour démarrer.")
@@ -463,8 +617,11 @@ with t2:
                     request_id=cid,
                     to_email=coach_to,
                     subject=f"[EVERSKILLS] Programme validé ({cid})",
-                    text_body=f"Le learner {learner_email} a validé le programme.\n\nCampagne: {cid}",
-                    meta={"camp_id": cid, "learner_email": learner_email, "coach_email": coach_to},
+                    text_body=(
+                    "Cet email marque le démarrage officiel de ton programme Everboarding.\n\n"
+                    "Ton programme démarre officiellement. Tu peux suivre ton avancement dans Learner Space."
+                    ),
+                    meta={"camp_id": cid},
                 )
 
                 send_once(
@@ -473,7 +630,10 @@ with t2:
                     request_id=cid,
                     to_email=learner_email,
                     subject=f"[EVERSKILLS] Démarrage officiel ({cid})",
-                    text_body=kickoff_txt or "Ton programme démarre officiellement.",
+                    text_body=(
+                    "Cet email marque le démarrage officiel de ton programme Everboarding.\n\n"
+                    "Ton programme démarre officiellement. Tu peux suivre ton avancement dans Learner Space."
+                    ),
                     meta={"camp_id": cid},
                 )
 
@@ -629,5 +789,3 @@ with t2:
 
                     st.success("OK ✅")
                     st.rerun()
-
-

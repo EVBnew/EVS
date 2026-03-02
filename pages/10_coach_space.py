@@ -41,9 +41,8 @@ if user.get("role") not in ("coach", "admin", "super_admin"):
 
 coach_email = (user.get("email") or "").strip().lower()
 
-
 # -----------------------------------------------------------------------------
-# Helpers
+# Helpers (generic)
 # -----------------------------------------------------------------------------
 def _norm_email(s: str) -> str:
     return (s or "").strip().lower()
@@ -88,7 +87,14 @@ def _append_event(
     events = camp.get("events")
     if not isinstance(events, list):
         events = []
-    events.append({"ts": now_iso(), "actor": actor, "type": event_type, "payload": payload or {}})
+    events.append(
+        {
+            "ts": now_iso(),
+            "actor": actor,
+            "type": event_type,
+            "payload": payload or {},
+        }
+    )
     camp["events"] = events
 
 
@@ -120,6 +126,84 @@ def _save_campaign_in_list(campaigns: List[Dict[str, Any]], camp: Dict[str, Any]
 
 
 # -----------------------------------------------------------------------------
+# CR16 — ACTION PLAN HELPERS
+# -----------------------------------------------------------------------------
+def _ensure_action_plan_struct(camp: Dict[str, Any]) -> Dict[str, Any]:
+    ap = camp.get("action_plan")
+    if not isinstance(ap, dict):
+        ap = {}
+
+    proposed = ap.get("proposed")
+    if not isinstance(proposed, dict):
+        proposed = {}
+
+    official = ap.get("official")
+    if not isinstance(official, dict):
+        official = {}
+
+    ap["proposed"] = proposed
+    ap["official"] = official
+    camp["action_plan"] = ap
+    return camp
+
+
+def _generate_weekly_plan_from_action_plan(camp: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    MVP:
+    - Action 1 → semaine 1
+    - Action 2 → semaine 2
+    - Action 3 → semaine 3
+    """
+    camp = _ensure_weekly_plan(camp)
+
+    ap = camp.get("action_plan", {})
+    official = ap.get("official", {})
+    actions = official.get("actions") or []
+    if not isinstance(actions, list):
+        actions = []
+
+    try:
+        weeks = int(camp.get("weeks") or 3)
+    except Exception:
+        weeks = 3
+
+    # Reset weekly_plan
+    for w in camp["weekly_plan"]:
+        if not isinstance(w, dict):
+            continue
+        w["objective_week"] = ""
+        w["actions"] = []
+
+    camp_id = str(camp.get("id") or "camp").strip()
+
+    # Map actions to week 1..N
+    for idx, action in enumerate(actions[:weeks]):
+        week_n = idx + 1
+        if not isinstance(action, dict):
+            continue
+        desc = str(action.get("description") or "").strip()
+        if not desc:
+            continue
+
+        for w in camp["weekly_plan"]:
+            if not isinstance(w, dict):
+                continue
+            if int(w.get("week") or 0) == week_n:
+                intention = str(official.get("intention") or "").strip()
+                w["objective_week"] = intention or str(camp.get("objective") or "").strip()
+                w["actions"] = [
+                    {
+                        "id": _make_action_id(camp_id, week_n, desc),
+                        "text": desc,
+                        "status": "within_reach",
+                    }
+                ]
+
+    camp["weekly_plan_origin"] = "action_plan"
+    return camp
+
+
+# -----------------------------------------------------------------------------
 # Weekly plan logic
 # -----------------------------------------------------------------------------
 def _compute_week_completion(week: Dict[str, Any]) -> Tuple[int, int, float]:
@@ -137,8 +221,6 @@ def _compute_week_completion(week: Dict[str, Any]) -> Tuple[int, int, float]:
             continue
         total += 1
         stt = str(a.get("status") or "").strip()
-        # Heuristic: learner may store keys (very_hard... / within_reach...),
-        # we only count "easy" or "very_easy" as done-ish, and keep backward compat.
         if stt in ("easy", "very_easy", "done", "4", "5"):
             done += 1
 
@@ -199,7 +281,6 @@ def _ensure_weekly_plan(camp: Dict[str, Any]) -> Dict[str, Any]:
     """
     - Keep weekly structure stable.
     - IMPORTANT: we do NOT inject placeholder text.
-      Empty actions may exist in coach UI, but learner will only see actions once saved with real text.
     """
     try:
         weeks = int(camp.get("weeks") or 3)
@@ -232,7 +313,6 @@ def _ensure_weekly_plan(camp: Dict[str, Any]) -> Dict[str, Any]:
                 txt_raw = str(a.get("text") or "")
                 stt = str(a.get("status") or "within_reach").strip() or "within_reach"
 
-                # Keep item even if text is empty (coach draft), but ensure id is present
                 if not aid:
                     seed = txt_raw.strip() if txt_raw.strip() else f"idx:{i}"
                     aid = _make_action_id(str(camp.get("id") or "camp"), w, seed)
@@ -530,7 +610,7 @@ requests_raw: List[Dict[str, Any]] = load_requests() or []
 campaigns_raw: List[Dict[str, Any]] = load_campaigns() or []
 
 requests_sorted = sorted([r for r in requests_raw if isinstance(r, dict)], key=_sort_key_req, reverse=True)
-campaigns = [c for c in campaigns_raw if isinstance(c, dict)]
+campaigns: List[Dict[str, Any]] = [c for c in campaigns_raw if isinstance(c, dict)]
 
 active_count = sum(1 for c in campaigns if _camp_status(c) == "active")
 program_ready_count = sum(1 for c in campaigns if _camp_status(c) == "program_ready")
@@ -546,7 +626,7 @@ m4.metric("New requests", new_requests_count)
 
 st.divider()
 
-col_left, col_mid, col_right = st.columns([1.15, 2.25, 1.2], gap="large")
+col_left, col_mid = st.columns([1, 4], gap="large")
 
 st.session_state.setdefault("coach_view", "Demandes")
 st.session_state.setdefault("selected_req_id", "")
@@ -633,9 +713,244 @@ with col_mid:
             st.write(f"**Semaines :** {selected_req.get('weeks', 3)}")
             st.write(f"**Statut request :** `{_req_status(selected_req)}`")
             st.write(f"**Assigné à :** `{_norm_email(str(selected_req.get('assigned_coach_email') or '')) or '-'}`")
+        st.divider()
+    st.markdown("### ⚙️ Actions")
 
+    # --- Create campaign from request (was in RIGHT) ---
+    if selected_req and not selected_camp:
+        if st.button("✅ Créer campagne (draft)", use_container_width=True):
+            rid = str(selected_req.get("id") or "").strip()
+            learner_email3 = _norm_email(str(selected_req.get("email") or ""))
+
+            camp = {
+                "id": f"camp_{rid}",
+                "request_id": rid,
+                "learner_email": learner_email3,
+                "coach_email": coach_email,
+                "objective": (selected_req.get("objective") or "").strip(),
+                "context": (selected_req.get("context") or "").strip(),
+                "weeks": int(selected_req.get("weeks") or 3),
+                "status": "draft",
+                "program_text": "",
+                "weekly_plan": [],
+                "weekly_plan_origin": "",
+                "kickoff_message": "",
+                "closure_message": "",
+                "created_at": now_iso(),
+                "updated_at": now_iso(),
+            }
+
+            camp = _ensure_weekly_plan(camp)
+            camp = _ensure_action_plan_struct(camp)
+            _append_event(camp, "campaign_created", actor="coach")
+            campaigns.append(camp)
+            save_campaigns(campaigns)
+
+            update_request(
+                rid,
+                {"status": "in_progress", "assigned_coach_email": coach_email, "updated_at": now_iso()},
+            )
+            st.success("Campagne créée ✅")
+            st.rerun()
+
+    # --- Campaign status actions (was in RIGHT) ---
+    if selected_camp:
+        st.caption(f"Campagne : `{selected_camp.get('id')}` — Statut : `{selected_camp.get('status')}`")
+
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("🟡 Remettre draft", use_container_width=True):
+                selected_camp["status"] = "draft"
+                selected_camp["updated_at"] = now_iso()
+                _append_event(selected_camp, "status_draft", actor="coach")
+                _save_campaign_in_list(campaigns, selected_camp)
+                st.rerun()
+
+        with c2:
+            if st.button("✅ Clôturer (closed)", use_container_width=True):
+                learner_email4 = _norm_email(str(selected_camp.get("learner_email") or ""))
+                weeks4 = int(selected_camp.get("weeks") or 3)
+                objective4 = str(selected_camp.get("objective") or "").strip()
+
+                selected_camp["status"] = "closed"
+                selected_camp["closed_at"] = now_iso()
+                selected_camp["updated_at"] = now_iso()
+                _append_event(selected_camp, "campaign_closed", actor="coach")
+                _save_campaign_in_list(campaigns, selected_camp)
+
+                camp_id2 = str(selected_camp.get("id") or "").strip()
+                send_once(
+                    event_key=f"CAMPAIGN_CLOSED:{camp_id2}",
+                    event_type="CAMPAIGN_CLOSED",
+                    request_id=camp_id2,
+                    to_email=learner_email4,
+                    subject=f"[EVERSKILLS] Campagne clôturée ({camp_id2})",
+                    text_body=(
+                        "Cet email marque la clôture officielle de ton programme Everboarding.\n\n"
+                        f"Objectif : {objective4}\n"
+                        f"Durée : {weeks4} partie(s)\n\n"
+                        "Bravo pour le chemin parcouru. Prends 5 minutes pour noter :\n"
+                        "- ce que tu veux continuer\n"
+                        "- ce que tu veux ajuster\n"
+                        "- ton prochain micro-pas dès cette semaine\n"
+                    ),
+                    meta={"camp_id": camp_id2, "learner_email": learner_email4, "coach_email": coach_email},
+                )
+
+                st.success("Clôturé ✅ (email envoyé)")
+                st.rerun()
+    # -------------------------------------------------------------------------
+    # CR16 — PLAN D’ACTION PROPOSÉ PAR LE LEARNER
+    # -------------------------------------------------------------------------
+    if selected_req:
+        ap_draft = selected_req.get("action_plan_draft")
+        if isinstance(ap_draft, dict) and ap_draft.get("enabled"):
+            st.divider()
+            st.markdown("## 🧩 Plan d’action proposé par le learner")
+
+            if not selected_camp:
+                st.info("Crée d’abord la campagne pour travailler sur ce plan.")
+            else:
+                selected_camp = _ensure_action_plan_struct(selected_camp)
+
+                # Base de travail : si déjà en campagne → on reprend, sinon on copie le draft Request
+                proposed = selected_camp["action_plan"].get("proposed")
+                if not isinstance(proposed, dict) or not proposed:
+                    proposed = dict(ap_draft)
+
+                # INTENTION
+                proposed["intention"] = st.text_area(
+                    "🎯 Intention stratégique",
+                    value=str(proposed.get("intention") or ""),
+                    key=f"ap_intention_{selected_camp.get('id')}",
+                    height=80,
+                )
+
+                # ACTIONS
+                actions = proposed.get("actions") or []
+                if not isinstance(actions, list):
+                    actions = []
+
+                norm_actions: List[Dict[str, str]] = []
+                for a in actions:
+                    if isinstance(a, dict):
+                        norm_actions.append(
+                            {
+                                "id": str(a.get("id") or "").strip(),
+                                "description": str(a.get("description") or "").strip(),
+                                "due_date": str(a.get("due_date") or "").strip(),
+                                "impact": str(a.get("impact") or "").strip(),
+                            }
+                        )
+                actions = norm_actions
+
+                st.markdown("### Actions (max 3)")
+                remove_idx: Optional[int] = None
+
+                for i, a in enumerate(actions[:3]):
+                    if not isinstance(a, dict):
+                        continue
+
+                    row = st.columns([0.55, 0.25, 0.20])
+
+                    with row[0]:
+                        a["description"] = st.text_area(
+                            f"Action {i+1}",
+                            value=str(a.get("description") or ""),
+                            key=f"ap_desc_{selected_camp.get('id')}_{i}",
+                            height=80,
+                            max_chars=400,  # CR16: enlarge to 400
+                        )
+
+                    with row[1]:
+                        a["due_date"] = st.text_input(
+                            "Échéance",
+                            value=str(a.get("due_date") or ""),
+                            key=f"ap_due_{selected_camp.get('id')}_{i}",
+                            placeholder="YYYY-MM-DD",
+                            max_chars=10,
+                        )
+
+                    with row[2]:
+                        if st.button(
+                            "🗑️ Supprimer",
+                            key=f"ap_rm_{selected_camp.get('id')}_{i}",
+                            use_container_width=True,
+                        ):
+                            remove_idx = i
+
+                if remove_idx is not None and 0 <= remove_idx < len(actions):
+                    actions.pop(remove_idx)
+                    proposed["actions"] = actions
+                    st.rerun()
+
+                if st.button(
+                    "➕ Ajouter action",
+                    key=f"ap_add_{selected_camp.get('id')}",
+                    use_container_width=True,
+                ):
+                    if len(actions) < 3:
+                        actions.append({"id": "", "description": "", "due_date": "", "impact": ""})
+                        proposed["actions"] = actions
+                    st.rerun()
+
+                proposed["actions"] = actions[:3]
+
+                # ENGAGEMENT & CONTEXTE
+                proposed["engagement_score"] = st.select_slider(
+                    "📊 Engagement",
+                    options=[1, 2, 3, 4, 5],
+                    value=int(proposed.get("engagement_score") or 3),
+                )
+
+                proposed["frictions"] = st.text_area(
+                    "⛔ Freins",
+                    value=str(proposed.get("frictions") or ""),
+                    height=70,
+                )
+
+                ce = proposed.get("coach_expectations")
+                if not isinstance(ce, dict):
+                    ce = {"mode": "text", "text": "", "tags": []}
+
+                ce["mode"] = "text"
+                ce["text"] = st.text_area(
+                    "🤝 Attentes vis-à-vis du coach",
+                    value=str(ce.get("text") or ""),
+                    height=70,
+                )
+                ce["tags"] = []
+                proposed["coach_expectations"] = ce
+
+                bsave, boff = st.columns(2)
+                with bsave:
+                    if st.button("💾 Enregistrer plan (brouillon)", use_container_width=True):
+                        selected_camp["action_plan"]["proposed"] = proposed
+                        selected_camp["updated_at"] = now_iso()
+                        _append_event(selected_camp, "action_plan_saved", actor="coach")
+                        _save_campaign_in_list(campaigns, selected_camp)
+                        st.success("Plan enregistré ✅")
+                        st.rerun()
+
+                with boff:
+                    if st.button("✅ Officialiser le plan", use_container_width=True):
+                        selected_camp["action_plan"]["official"] = dict(proposed)
+                        selected_camp["action_plan"]["official"]["validated_at"] = now_iso()
+                        selected_camp["action_plan"]["official"]["validated_by"] = coach_email
+
+                        selected_camp = _generate_weekly_plan_from_action_plan(selected_camp)
+
+                        _append_event(selected_camp, "ACTION_PLAN_OFFICIALIZED", actor="coach")
+                        _save_campaign_in_list(campaigns, selected_camp)
+
+                        st.success("Plan officialisé + weekly_plan synchronisé ✅")
+                        st.rerun()
+
+    # -------------------------------------------------------------------------
+    # PROGRAMME (coach) + IA (si pas action_plan)
+    # -------------------------------------------------------------------------
     if not selected_camp:
-        st.info("Aucune campagne liée. ➜ Crée-la dans la colonne de droite.")
+        st.info("Sélectionne une demande/campagne pour travailler.")
     else:
         existing_text = (selected_camp.get("program_text") or "").strip()
         camp_id = str(selected_camp.get("id") or "").strip()
@@ -644,50 +959,56 @@ with col_mid:
             st.session_state["_draft_cid"] = camp_id
             st.session_state["program_draft"] = existing_text
 
-        b1, b2, b3 = st.columns([1, 1, 1.4])
-        with b1:
-            do_gen = st.button("⚡ Générer (IA)", use_container_width=True)
-        with b2:
-            do_regen = st.button("🔁 Regénérer", use_container_width=True)
-        with b3:
-            do_load = st.button("↩️ Recharger depuis campagne", use_container_width=True)
+        weekly_origin = str(selected_camp.get("weekly_plan_origin") or "").strip()
 
-        if do_load:
-            st.session_state["program_draft"] = (selected_camp.get("program_text") or "").strip()
-            selected_camp, _ = _sync_weekly_plan_from_program(selected_camp)
-            _save_campaign_in_list(campaigns, selected_camp)
-            st.success("Rechargé ✅")
-            st.rerun()
+        # CR16: si weekly_plan vient du plan d’action, on retire les boutons IA
+        if weekly_origin == "action_plan":
+            st.info("Programme IA désactivé : weekly_plan vient du plan d’action officialisé.")
+        else:
+            b1, b2, b3 = st.columns([1, 1, 1.4])
+            with b1:
+                do_gen = st.button("⚡ Générer (IA)", use_container_width=True)
+            with b2:
+                do_regen = st.button("🔁 Regénérer", use_container_width=True)
+            with b3:
+                do_load = st.button("↩️ Recharger depuis campagne", use_container_width=True)
 
-        if do_gen or do_regen:
-            client = _get_openai_client()
-            model = (st.secrets.get("OPENAI_MODEL") or "gpt-4o-mini").strip()
-            if not client:
-                st.error("OPENAI_API_KEY manquante (ou SDK openai absent).")
-            else:
-                objective = str(selected_camp.get("objective") or "").strip()
-                context = str(selected_camp.get("context") or "").strip()
-                try:
-                    weeks = int(selected_camp.get("weeks") or 3)
-                except Exception:
-                    weeks = 3
+            if do_load:
+                st.session_state["program_draft"] = (selected_camp.get("program_text") or "").strip()
+                selected_camp, _ = _sync_weekly_plan_from_program(selected_camp)
+                _save_campaign_in_list(campaigns, selected_camp)
+                st.success("Rechargé ✅")
+                st.rerun()
 
-                prompt = _build_program_prompt(objective, context, weeks)
-                try:
-                    resp = client.chat.completions.create(
-                        model=model,
-                        messages=[
-                            {"role": "system", "content": "Tu es un coach RH exigeant, pragmatique et bienveillant."},
-                            {"role": "user", "content": prompt},
-                        ],
-                        temperature=0.4,
-                        max_tokens=900,
-                    )
-                    text = (resp.choices[0].message.content or "").strip()
-                    st.session_state["program_draft"] = text
-                    st.success("Programme généré ✅")
-                except Exception as e:
-                    st.error(f"Erreur IA: {e}")
+            if do_gen or do_regen:
+                client = _get_openai_client()
+                model = (st.secrets.get("OPENAI_MODEL") or "gpt-4o-mini").strip()
+                if not client:
+                    st.error("OPENAI_API_KEY manquante (ou SDK openai absent).")
+                else:
+                    objective = str(selected_camp.get("objective") or "").strip()
+                    context = str(selected_camp.get("context") or "").strip()
+                    try:
+                        weeks = int(selected_camp.get("weeks") or 3)
+                    except Exception:
+                        weeks = 3
+
+                    prompt = _build_program_prompt(objective, context, weeks)
+                    try:
+                        resp = client.chat.completions.create(
+                            model=model,
+                            messages=[
+                                {"role": "system", "content": "Tu es un coach RH exigeant, pragmatique et bienveillant."},
+                                {"role": "user", "content": prompt},
+                            ],
+                            temperature=0.4,
+                            max_tokens=900,
+                        )
+                        text = (resp.choices[0].message.content or "").strip()
+                        st.session_state["program_draft"] = text
+                        st.success("Programme généré ✅")
+                    except Exception as e:
+                        st.error(f"Erreur IA: {e}")
 
         program_text = st.text_area(
             "Programme (modifiable)",
@@ -733,9 +1054,11 @@ with col_mid:
                     to_email=learner_to,
                     subject=f"[EVERSKILLS] Programme prêt ({camp_id})",
                     text_body=(
+                        "Cet email marque le démarrage officiel de ton programme Everboarding.\n\n"
                         "Ton coach a publié ton programme.\n\n"
-                        "Connecte-toi à EVERSKILLS (Learner Space > Mon plan) pour le consulter "
-                        "et confirmer le démarrage.\n\n"
+                        "✅ Prochaine étape : connecte-toi à EVERSKILLS\n"
+                        "Learner Space > Mon plan\n"
+                        "pour le consulter et confirmer le démarrage.\n\n"
                         f"Campagne: {camp_id}\n"
                     ),
                     meta={"camp_id": camp_id, "learner_email": learner_to, "coach_email": coach_email},
@@ -745,39 +1068,7 @@ with col_mid:
                 st.success("Publié ✅")
                 st.rerun()
 
-        st.divider()
-        st.markdown("### 💬 Message de démarrage (visible learner)")
 
-        kickoff = st.text_area(
-            " ",
-            value=str(selected_camp.get("kickoff_message") or ""),
-            height=120,
-            placeholder="Ex: Bienvenue ! Cette semaine, on démarre simple et concret.",
-            label_visibility="collapsed",
-            key=f"kickoff_{selected_camp.get('id')}",
-        )
-
-        kc1, kc2 = st.columns([1, 1])
-        with kc1:
-            if st.button("💾 Enregistrer le message de démarrage", use_container_width=True):
-                selected_camp["kickoff_message"] = kickoff.strip()
-                selected_camp["updated_at"] = now_iso()
-                _append_event(selected_camp, "kickoff_saved", actor="coach")
-                _save_campaign_in_list(campaigns, selected_camp)
-                st.success("OK ✅")
-                st.rerun()
-        with kc2:
-            if st.button("✨ Auto-générer (template)", use_container_width=True):
-                learner_email2 = _norm_email(str(selected_camp.get("learner_email") or ""))
-                learner_first = _first_name_from_access(learner_email2)
-                coach_first = str(user.get("first_name") or "").strip()
-                weeks2 = int(selected_camp.get("weeks") or 3)
-                selected_camp["kickoff_message"] = _kickoff_template(learner_first, weeks2, coach_first).strip()
-                selected_camp["updated_at"] = now_iso()
-                _append_event(selected_camp, "kickoff_autofill", actor="coach")
-                _save_campaign_in_list(campaigns, selected_camp)
-                st.success("Template appliqué ✅")
-                st.rerun()
 
         st.divider()
         st.subheader("📈 Suivi learner (lecture + réponse coach + édition programme hebdo)")
@@ -795,36 +1086,34 @@ with col_mid:
                     continue
 
                 week_n = int(w.get("week") or 0) or 0
-                obj_week = str(w.get("objective_week") or f"Semaine {week_n}").strip()
+                obj_week = str(w.get("objective_week") or f"Partie {week_n}").strip()
 
                 d, t, pct = _compute_week_completion(w)
-                header = f"Semaine {week_n} — {obj_week or 'Objectif non défini'} — {pct:.0f}% ({d}/{t})"
+                header = f"Partie {week_n} — {obj_week or 'Objectif non défini'} — {pct:.0f}% ({d}/{t})"
 
                 with st.expander(header, expanded=(week_n == 1)):
-                    # Progression par partie
                     st.caption(f"Progression partie : {pct:.0f}%")
                     st.progress(min(max(pct / 100.0, 0.0), 1.0))
-                    st.markdown("**🛠️ Programme de la semaine (coach peut éditer)**")
+
+                    st.markdown("**🛠️ Programme de la partie (coach peut éditer)**")
                     obj_key = f"week_obj__{selected_camp.get('id')}__{week_n}"
                     st.text_input(
-                        "Objectif de la semaine",
-                    value=str(w.get("objective_week") or ""),
-                    key=obj_key,
-
+                        "Objectif de la partie",
+                        value=str(w.get("objective_week") or ""),
+                        key=obj_key,
                     )
 
+                    # ACTIONS (coach add/edit/remove)
                     actions = w.get("actions") or []
                     if not isinstance(actions, list):
                         actions = []
 
-                    remove_idx: Optional[int] = None
-                    st.caption("Actions (ajout + édition + sauvegarde manuelle)")
-
                     # Render inputs
-                    for ai, a in enumerate(actions):
+                    remove_idx: Optional[int] = None
+                    st.markdown("### Actions (max 3)")
+                    for ai, a in enumerate(actions[:3]):
                         if not isinstance(a, dict):
                             continue
-
                         aid = str(a.get("id") or "").strip()
                         txt = str(a.get("text") or "")
 
@@ -846,63 +1135,7 @@ with col_mid:
                             ):
                                 remove_idx = ai
 
-                    # Add + Save (manual persist)
-                    add_col, save_col = st.columns([0.40, 0.60])
-
-                    with add_col:
-                        if st.button(
-                            "➕ Ajouter une action",
-                            key=f"add_act__{selected_camp.get('id')}__{week_n}",
-                            use_container_width=True,
-                        ):
-                            camp_id_for_action = str(selected_camp.get("id") or "camp").strip()
-                            new_id = _make_action_id(camp_id_for_action, week_n, f"new:{now_iso()}")
-                            actions.append({"id": new_id, "text": "", "status": "within_reach"})
-                            w["actions"] = actions
-
-                            selected_camp["updated_at"] = now_iso()
-                            _append_event(
-                                selected_camp,
-                                "coach_action_added",
-                                actor="coach",
-                                payload={"week": week_n, "action_id": new_id},
-                            )
-                            _save_campaign_in_list(campaigns, selected_camp)
-                            st.rerun()
-
-                    with save_col:
-                        if st.button(
-                            "💾 Enregistrer actions",
-                            key=f"save_actions__{selected_camp.get('id')}__{week_n}",
-                            use_container_width=True,
-                        ):
-                            acts = w.get("actions") or []
-                            if not isinstance(acts, list):
-                                acts = []
-
-                            # Read back from session_state
-                            for ai, a in enumerate(acts):
-                                if not isinstance(a, dict):
-                                    continue
-                                ktxt = f"week_act_txt__{selected_camp.get('id')}__{week_n}__{ai}"
-                                a["text"] = str(st.session_state.get(ktxt) or "").strip()
-
-                                if not str(a.get("id") or "").strip():
-                                    camp_id_for_action = str(selected_camp.get("id") or "camp").strip()
-                                    a["id"] = _make_action_id(camp_id_for_action, week_n, a["text"] or f"idx:{ai}")
-
-                            # Keep only non-empty actions so learner never sees useless placeholders
-                            acts = [a for a in acts if isinstance(a, dict) and str(a.get("text") or "").strip()]
-                            w["actions"] = acts
-                            selected_camp["updated_at"] = now_iso()
-
-                            _append_event(selected_camp, "coach_actions_saved", actor="coach", payload={"week": week_n})
-                            _save_campaign_in_list(campaigns, selected_camp)
-
-                            st.success("Actions enregistrées ✅")
-                            st.rerun()
-
-                    # Remove action (outside button, still in expander)
+                    # Apply remove (outside button loop)
                     if remove_idx is not None and 0 <= remove_idx < len(actions):
                         removed = actions.pop(remove_idx)
                         w["actions"] = actions
@@ -920,8 +1153,67 @@ with col_mid:
                         _save_campaign_in_list(campaigns, selected_camp)
                         st.rerun()
 
+                    add_col, save_col = st.columns([0.40, 0.60])
+                    with add_col:
+                        if st.button(
+                            "➕ Ajouter une action",
+                            key=f"add_act__{selected_camp.get('id')}__{week_n}",
+                            use_container_width=True,
+                        ):
+                            if len(actions) < 3:
+                                camp_id_for_action = str(selected_camp.get("id") or "camp").strip()
+                                new_id = _make_action_id(camp_id_for_action, week_n, f"new:{now_iso()}")
+                                actions.append({"id": new_id, "text": "", "status": "within_reach"})
+                                w["actions"] = actions
+                                selected_camp["updated_at"] = now_iso()
+                                _append_event(
+                                    selected_camp,
+                                    "coach_action_added",
+                                    actor="coach",
+                                    payload={"week": week_n, "action_id": new_id},
+                                )
+                                _save_campaign_in_list(campaigns, selected_camp)
+                            st.rerun()
+
+                    with save_col:
+                        if st.button(
+                            "💾 Enregistrer actions",
+                            key=f"save_actions__{selected_camp.get('id')}__{week_n}",
+                            use_container_width=True,
+                        ):
+                            acts = w.get("actions") or []
+                            if not isinstance(acts, list):
+                                acts = []
+
+                            # Persist texts from session_state
+                            for ai, a in enumerate(acts):
+                                if not isinstance(a, dict):
+                                    continue
+                                ktxt = f"week_act_txt__{selected_camp.get('id')}__{week_n}__{ai}"
+                                a["text"] = str(st.session_state.get(ktxt) or str(a.get("text") or "")).strip()
+                                if not str(a.get("id") or "").strip():
+                                    camp_id_for_action = str(selected_camp.get("id") or "camp").strip()
+                                    a["id"] = _make_action_id(camp_id_for_action, week_n, a["text"] or f"idx:{ai}")
+
+                            # Keep only non-empty actions
+                            acts = [a for a in acts if isinstance(a, dict) and str(a.get("text") or "").strip()]
+                            w["actions"] = acts
+                            selected_camp["updated_at"] = now_iso()
+
+                            _append_event(
+                                selected_camp,
+                                "coach_actions_saved",
+                                actor="coach",
+                                payload={"week": week_n},
+                            )
+                            _save_campaign_in_list(campaigns, selected_camp)
+
+                            st.success("Actions enregistrées ✅")
+                            st.rerun()
+
                     st.divider()
 
+                    # Update learner
                     st.markdown("**Update learner**")
                     learner_txt = str(w.get("learner_comment") or "").strip()
                     if learner_txt:
@@ -931,6 +1223,7 @@ with col_mid:
 
                     st.divider()
 
+                    # Mood
                     st.markdown("**Note d’ambiance (coach ajuste)**")
                     mood = str(w.get("mood_score") or "").strip()
                     try:
@@ -951,6 +1244,7 @@ with col_mid:
 
                     st.divider()
 
+                    # Coach response
                     st.markdown("**Réponse coach (visible learner)**")
                     coach_comment = st.text_area(
                         " ",
@@ -962,6 +1256,7 @@ with col_mid:
 
                     st.divider()
 
+                    # Close week
                     closed_at = str(w.get("closed_at") or "").strip()
                     if closed_at:
                         st.success(f"✅ Partie {week_n} clôturée ({closed_at})")
@@ -978,6 +1273,9 @@ with col_mid:
                             _save_campaign_in_list(campaigns, selected_camp)
                             st.rerun()
 
+                    st.divider()
+
+                    # Save week
                     if st.button(
                         "💾 Enregistrer semaine (coach)",
                         key=f"save_coach_{selected_camp.get('id')}_{week_n}",
@@ -1029,9 +1327,9 @@ with col_mid:
                             event_type="COACH_UPDATE",
                             request_id=cid3,
                             to_email=learner_to,
-                            subject=f"[EVERSKILLS] Retour coach semaine {week_n} ({cid3})",
+                            subject=f"[EVERSKILLS] Retour coach partie {week_n} ({cid3})",
                             text_body=(
-                                f"Ton coach a répondu sur ta semaine {week_n}.\n\n"
+                                f"Ton coach a répondu sur ta partie {week_n}.\n\n"
                                 f"Campagne: {cid3}\n"
                                 f"Coach: {coach_from}\n\n"
                                 f"{coach_comment.strip() or '(pas de message)'}"
@@ -1047,135 +1345,3 @@ with col_mid:
                         st.success("OK ✅")
                         st.rerun()
 
-# -----------------------------------------------------------------------------
-# RIGHT
-# -----------------------------------------------------------------------------
-with col_right:
-    st.subheader("🚦 Actions")
-
-    if selected_req and not selected_camp:
-        st.divider()
-        if st.button("✅ Créer campagne (draft)", use_container_width=True):
-            rid = str(selected_req.get("id") or "").strip()
-            learner_email3 = _norm_email(str(selected_req.get("email") or ""))
-
-            camp = {
-                "id": f"camp_{rid}",
-                "request_id": rid,
-                "learner_email": learner_email3,
-                "coach_email": coach_email,
-                "objective": (selected_req.get("objective") or "").strip(),
-                "context": (selected_req.get("context") or "").strip(),
-                "weeks": int(selected_req.get("weeks") or 3),
-                "status": "draft",
-                "program_text": "",
-                "weekly_plan": [],
-                "kickoff_message": "",
-                "closure_message": "",
-                "created_at": now_iso(),
-                "updated_at": now_iso(),
-            }
-
-            camp = _ensure_weekly_plan(camp)
-            _append_event(camp, "campaign_created", actor="coach")
-            campaigns.append(camp)
-            save_campaigns(campaigns)
-
-            update_request(rid, {"status": "in_progress", "updated_at": now_iso()})
-            st.success("Campagne créée ✅")
-            st.rerun()
-
-    if selected_camp:
-        st.divider()
-        st.write(f"**Campagne :** `{selected_camp.get('id')}`")
-        st.write(f"**Statut :** `{selected_camp.get('status')}`")
-
-        st.divider()
-        c1, c2 = st.columns(2)
-        with c1:
-            if st.button("🟡 Remettre draft", use_container_width=True):
-                selected_camp["status"] = "draft"
-                selected_camp["updated_at"] = now_iso()
-                _append_event(selected_camp, "status_draft", actor="coach")
-                _save_campaign_in_list(campaigns, selected_camp)
-                st.rerun()
-
-        with c2:
-            if st.button("✅ Clôturer (closed)", use_container_width=True):
-                learner_email4 = _norm_email(str(selected_camp.get("learner_email") or ""))
-                learner_first = _first_name_from_access(learner_email4)
-                coach_first = str(user.get("first_name") or "").strip()
-                weeks4 = int(selected_camp.get("weeks") or 3)
-                objective4 = str(selected_camp.get("objective") or "").strip()
-
-                if not str(selected_camp.get("closure_message") or "").strip():
-                    selected_camp["closure_message"] = _closure_template(
-                        learner_first, objective4, weeks4, coach_first
-                    ).strip()
-
-                selected_camp["status"] = "closed"
-                selected_camp["closed_at"] = now_iso()
-                selected_camp["updated_at"] = now_iso()
-                _append_event(selected_camp, "campaign_closed", actor="coach")
-                _save_campaign_in_list(campaigns, selected_camp)
-
-                camp_id2 = str(selected_camp.get("id") or "").strip()
-                send_once(
-                    event_key=f"CAMPAIGN_CLOSED:{camp_id2}",
-                    event_type="CAMPAIGN_CLOSED",
-                    request_id=camp_id2,
-                    to_email=learner_email4,
-                    subject=f"[EVERSKILLS] Campagne clôturée ({camp_id2})",
-                    text_body=str(selected_camp.get("closure_message") or "").strip()
-                    or "Ta campagne est clôturée. Bravo pour le chemin parcouru !",
-                    meta={"camp_id": camp_id2, "learner_email": learner_email4, "coach_email": coach_email},
-                )
-
-                st.success("Clôturé ✅ (message de clôture prêt + email envoyé)")
-                st.rerun()
-
-        st.divider()
-        st.markdown("### 🏁 Message de clôture (visible learner)")
-
-        closing = st.text_area(
-            " ",
-            value=str(selected_camp.get("closure_message") or ""),
-            height=120,
-            placeholder="Ex: Bravo pour le chemin parcouru... (message final)",
-            label_visibility="collapsed",
-            key=f"closure_{selected_camp.get('id')}",
-        )
-
-        cc1, cc2 = st.columns([1, 1])
-        with cc1:
-            if st.button("💾 Enregistrer le message de clôture", use_container_width=True):
-                selected_camp["closure_message"] = closing.strip()
-                selected_camp["updated_at"] = now_iso()
-                _append_event(selected_camp, "closure_saved", actor="coach")
-                _save_campaign_in_list(campaigns, selected_camp)
-                st.success("OK ✅")
-                st.rerun()
-        with cc2:
-            if st.button("✨ Auto-générer (template clôture)", use_container_width=True):
-                learner_email5 = _norm_email(str(selected_camp.get("learner_email") or ""))
-                learner_first = _first_name_from_access(learner_email5)
-                coach_first = str(user.get("first_name") or "").strip()
-                weeks5 = int(selected_camp.get("weeks") or 3)
-                objective5 = str(selected_camp.get("objective") or "").strip()
-                selected_camp["closure_message"] = _closure_template(
-                    learner_first, objective5, weeks5, coach_first
-                ).strip()
-                selected_camp["updated_at"] = now_iso()
-                _append_event(selected_camp, "closure_autofill", actor="coach")
-                _save_campaign_in_list(campaigns, selected_camp)
-                st.success("Template appliqué ✅")
-                st.rerun()
-
-        st.divider()
-        st.markdown("**Événements**")
-        ev = selected_camp.get("events")
-        if isinstance(ev, list) and ev:
-            for e in list(reversed(ev))[:12]:
-                st.write(f"- {e.get('ts','')} — {e.get('type','')}")
-        else:
-            st.caption("Aucun.")
